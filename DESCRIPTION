@@ -1,0 +1,20 @@
+Package: gsim
+Type: Package
+Title: Genomic Simulation for Validation Studies
+Version: 0.1.0
+Depends: R (>= 3.5.0)
+Authors@R: person("Peter", "Sørensen", email = "peter.sorensen@r-qgg.org",
+    role = c("aut", "cre"))
+Description: Simulates genotype and phenotype data for genomic validation
+    studies. Supports independent simulated genotypes, caller-provided genotype
+    matrices, and optional qgg genotype-list objects, with scalar or multiple
+    traits, annotation-informed architectures, marker-specific effect-variance
+    multipliers, and optional summary statistics.
+License: GPL-3
+Suggests:
+    qgg,
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+Encoding: UTF-8
