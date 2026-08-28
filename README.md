@@ -39,6 +39,46 @@ Real `qgg::Glist` inputs are supported when `qgg` is installed. Scientific
 validation studies remain in packages such as `sblrbench`; they are not bundled
 with `gsim`.
 
+## Pedigree and record workloads
+
+`gsim_pedigree()` creates scalable multigenerational pedigree domains with
+restricted sire and dam pools, overlapping generations, missing parents, later
+founders, deliberately unphenotyped animals, and separate canonical and external
+orders. Parent-before-offspring ordering is explicit in `canonical_order`; the
+returned pedigree table uses the reproducibly arbitrary `external_order`.
+
+`gsim_pedigree_records()` turns one pedigree into one selected model view:
+single-trait, two-trait with incomplete observation patterns, or irregular
+longitudinal random regression. Every observed phenotype is one scalar row.
+Missing traits and times are absent records, not imputed values. The fixed design
+is a sorted one-based triplet list (`row`, `column`, `value`) with four stored
+entries per observation, so no large dense incidence matrix is returned.
+
+Longitudinal views store a basis row aligned with every observed record. Optional
+prediction records provide animal, new time, basis, and fitted truth without an
+observed residual or phenotype.
+
+The pedigree latent values are deterministic solver-workload values formed by a
+scalable parent-average recursion. They are not an inbreeding-aware exact draw
+from a numerator-relationship covariance, and covariance recovery is therefore
+not a validation target. Their purpose is to supply identical model inputs and
+right-hand sides for sparse solver parity studies.
+
+```r
+ped <- gsim_pedigree(
+  n_generations = 5, animals_per_generation = 40,
+  sires_per_generation = 6, dams_per_generation = 12, seed = 10
+)
+long <- gsim_pedigree_records(
+  ped, model = "longitudinal", prediction_records = TRUE, seed = 11
+)
+```
+
+The non-test script `tools/qualification/pedigree_solver_workload.R` contains the
+fixed 50,000-animal construction qualification. It prints counts, dimensions,
+object sizes, elapsed construction times, and deterministic checksums, produces
+no permanent output by default, and is never run by `R CMD check`.
+
 ## Provenance
 
 The initial implementation was extracted from `sblr` commit
