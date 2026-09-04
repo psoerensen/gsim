@@ -18,3 +18,5 @@ Config/testthat/edition: 3
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Encoding: UTF-8
+NeedsCompilation: yes
+SystemRequirements: C++11
