@@ -111,12 +111,48 @@ is rejected rather than silently substituted.
 
 The native core is single-threaded.  It uses specified SplitMix64 streams and
 does not use R's global RNG or implementation-defined C++ distribution
-objects.  Each `(seed, global haplotype index, chromosome-block index)` tuple
-derives an independent deterministic stream.  Uniform doubles use the leading
-53 random bits plus a half-unit offset, giving values strictly inside `(0,1)`;
-bounded donor indices use rejection sampling rather than biased remainder
-mapping.  The algorithm and constants are part of the reproducibility
-contract.
+objects.  Each `(seed, global haplotype index, chromosome identity)` tuple
+derives an independent deterministic stream.  Chromosome identity is the exact
+UTF-8 byte sequence produced by `Rf_translateCharUTF8()` for the explicit
+chromosome label.  Labels are not trimmed, case-folded, numerically interpreted,
+or otherwise normalized: `"1"`, `"01"`, `"chr1"`, and `"CHR1"` are distinct.
+Missing and empty labels are rejected, every label must occupy one contiguous
+block, and distinct labels present in one call must have distinct hashes.
+
+The chromosome key is 64-bit FNV-1a over those bytes, starting from offset
+`0xcbf29ce484222325` and multiplying by prime `0x00000100000001b3` after
+XORing each byte.  Distinct in-call labels that collide are rejected.  Stream
+construction retains the founder constants and order:
+
+`global_individual = individual_offset + zero_based_batch_individual`, and
+`global_haplotype = 2 * global_individual + phase`, where phase is zero for H1
+and one for H2.  Thus the phase remains part of stable synthetic-haplotype
+identity.  With that definition:
+
+```
+key = seed XOR 0x6a09e667f3bcc909
+key = key XOR ((global_haplotype + 1) * 0xd2b74407b1ce6e93)
+key = key XOR (fnv1a64(chromosome_utf8) * 0xca5a826395121157)
+stream_state = mix64(key)
+```
+
+Here `mix64(z)` applies, in order,
+`z = (z XOR (z >> 30)) * 0xbf58476d1ce4e5b9`, then
+`z = (z XOR (z >> 27)) * 0x94d049bb133111eb`, and returns
+`z XOR (z >> 31)`.  Each SplitMix64 draw increments the stream state by
+`0x9e3779b97f4a7c15` and returns `mix64(stream_state)`.  All arithmetic is
+unsigned modulo 2^64.  The label crosses the R/native
+boundary as a character string; no arbitrary 64-bit key is represented as an
+R double.  Uniform doubles use the leading 53 random bits plus a half-unit
+offset, giving values strictly inside `(0,1)`; bounded donor indices use
+rejection sampling rather than biased remainder mapping.  Chromosome order,
+other chromosomes, and standalone versus collection processing do not affect
+a chromosome's stream.  The within-stream draw order is unchanged.
+
+Before this contract, the implementation keyed streams by input block number.
+That made chromosome results order-dependent.  Seeded founder results from
+that defective implementation intentionally change under this correction; no
+legacy block-index mode is retained.  HAPNEST's statistical model is unchanged.
 
 `individual_offset` supplies global individual numbering for an internal
 batch.  Generating a range in one call or in consecutive batches with the same
@@ -134,7 +170,8 @@ duplicated/unnamed population parameters, unsupported donor-phase modes,
 negative or all-zero ancestry weights, positive-weight populations without a
 donor, nonpositive or nonfinite `N`, `Ne`, or `rho`, nonfinite or negative
 mutation ages, and nonfinite genetic positions.  Chromosome labels must form
-contiguous blocks and positions must be nondecreasing within each block.
+contiguous blocks, distinct labels must not collide under the frozen FNV-1a
+identity, and positions must be nondecreasing within each block.
 Inputs are rejected rather than reordered because reordering only the genetic
 distance vector, as HAPNEST currently does
 ([`parameter_parsing.jl` lines 185-197](https://github.com/intervene-EU-H2020/synthetic_data/blob/ba52da1a63cf609306ea92540b3d130fa1efd213/utils/parameter_parsing.jl#L185-L197)),

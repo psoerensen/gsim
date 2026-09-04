@@ -60,6 +60,7 @@ NULL
   chromosome = rep.int("1", ncol(reference_haplotypes_h1)),
   donor_phase = "hapnest",
   return_genotypes = TRUE,
+  return_segments = TRUE,
   individual_offset = 0L
 ) {
   reference_haplotypes_h1 <- .gsim_hapnest_raw_matrix(
@@ -179,6 +180,10 @@ NULL
       is.na(return_genotypes)) {
     .gsim_stop("return_genotypes must be TRUE or FALSE.")
   }
+  if (!is.logical(return_segments) || length(return_segments) != 1L ||
+      is.na(return_segments)) {
+    .gsim_stop("return_segments must be TRUE or FALSE.")
+  }
 
   ans <- .Call(
     C_gsim_hapnest_founders,
@@ -190,11 +195,13 @@ NULL
     Ne,
     rho,
     as.integer(chromosome_block),
+    runs$values,
     genetic_position,
     mutation_age,
     n,
     as.double(seed),
     return_genotypes,
+    return_segments,
     individual_offset
   )
 
@@ -204,26 +211,30 @@ NULL
   dimnames(ans$h2) <- list(ids, variants)
   if (!is.null(ans$genotypes)) dimnames(ans$genotypes) <- list(ids, variants)
 
-  segment <- ans$segments
-  segment$chromosome <- runs$values[segment$chromosome_block]
-  segment$donor_population <- active[segment$donor_population_code]
-  segment$chromosome_block <- NULL
-  segment$donor_population_code <- NULL
-  segment <- segment[c(
-    "individual", "phase", "haplotype", "chromosome", "start", "end",
-    "donor_individual", "donor_population", "coalescent_age",
-    "sampled_length", "copied_genetic_span", "copied_alternative",
-    "retained_alternative"
-  )]
-  class(segment) <- "data.frame"
-  attr(segment, "row.names") <- .set_row_names(length(segment$phase))
-  ans$segments <- segment
+  if (return_segments) {
+    segment <- ans$segments
+    segment$chromosome <- runs$values[segment$chromosome_block]
+    segment$donor_population <- active[segment$donor_population_code]
+    segment$chromosome_block <- NULL
+    segment$donor_population_code <- NULL
+    segment <- segment[c(
+      "individual", "phase", "haplotype", "chromosome", "start", "end",
+      "donor_individual", "donor_population", "coalescent_age",
+      "sampled_length", "copied_genetic_span", "copied_alternative",
+      "retained_alternative"
+    )]
+    class(segment) <- "data.frame"
+    attr(segment, "row.names") <- .set_row_names(length(segment$phase))
+    ans$segments <- segment
+  }
   ans$settings <- list(
     model = "HAPNEST founder core",
     hapnest_revision = "ba52da1a63cf609306ea92540b3d130fa1efd213",
     donor_phase = donor_phase,
     reference_layout = "paired H1/H2 rows are reference individuals",
-    rng = "SplitMix64 per (seed, global haplotype, chromosome block)",
+    chromosome_identity = "exact UTF-8 label bytes; no normalization",
+    chromosome_hash = "FNV-1a 64-bit",
+    rng = "SplitMix64 per (seed, global haplotype, chromosome identity)",
     seed = as.double(seed),
     individual_offset = individual_offset,
     populations = active,
@@ -235,6 +246,14 @@ NULL
   )
   class(ans) <- c("gsim_hapnest_founders", "list")
   ans
+}
+
+.gsim_hapnest_chromosome_keys <- function(chromosome) {
+  if (!is.character(chromosome) || !length(chromosome) || anyNA(chromosome) ||
+      any(!nzchar(chromosome))) {
+    .gsim_stop("chromosome must contain nonempty, nonmissing labels.")
+  }
+  .Call(C_gsim_hapnest_chromosome_keys, chromosome)
 }
 
 .gsim_hapnest_scales <- function(N, Ne, T, rho) {

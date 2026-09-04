@@ -74,8 +74,11 @@ parental homologues of later descendants.
 The implementation is single-threaded and does not touch R's global RNG.  Each
 gamete has a SplitMix64 stream derived from the numeric seed plus stable UTF-8
 hashes of the child animal ID and chromosome label and a paternal/maternal side
-tag.  Strings use specified 64-bit FNV-1a hashing; all components are combined
-with specified SplitMix64 constants in native code.  Consequently streams do
+tag.  As in the founder oracle, string identity is the exact, unnormalized,
+case-sensitive UTF-8 byte sequence from `Rf_translateCharUTF8()`.  FNV-1a uses
+offset `0xcbf29ce484222325` and prime `0x00000100000001b3`; all components are
+combined with the meiosis-specific SplitMix64 constants in native code.
+Consequently streams do
 not depend on external row order, output options, chromosome collection order,
 or operational batch boundaries.  Adding unrelated animals whose IDs and
 parentage do not replace existing animals does not change existing streams.

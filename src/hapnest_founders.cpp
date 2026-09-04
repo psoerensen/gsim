@@ -74,11 +74,49 @@ private:
 };
 
 std::uint64_t stream_seed(std::uint64_t seed, std::uint64_t haplotype,
-                          std::uint64_t chromosome_block) noexcept {
+                          std::uint64_t chromosome_key) noexcept {
     std::uint64_t key = seed ^ UINT64_C(0x6a09e667f3bcc909);
     key ^= (haplotype + 1u) * UINT64_C(0xd2b74407b1ce6e93);
-    key ^= (chromosome_block + 1u) * UINT64_C(0xca5a826395121157);
+    key ^= chromosome_key * UINT64_C(0xca5a826395121157);
     return mix64(key);
+}
+
+std::uint64_t fnv1a_utf8(const std::string& text) noexcept {
+    std::uint64_t hash = UINT64_C(14695981039346656037);
+    for (unsigned char byte : text) {
+        hash ^= static_cast<std::uint64_t>(byte);
+        hash *= UINT64_C(1099511628211);
+    }
+    return hash;
+}
+
+std::vector<std::uint64_t> chromosome_keys(SEXP labels) {
+    if (TYPEOF(labels) != STRSXP || XLENGTH(labels) <= 0) {
+        fail("chromosome labels must be a nonempty character vector");
+    }
+    std::vector<std::uint64_t> keys;
+    std::vector<std::string> texts;
+    keys.reserve(static_cast<std::size_t>(XLENGTH(labels)));
+    texts.reserve(static_cast<std::size_t>(XLENGTH(labels)));
+    for (R_xlen_t i = 0; i < XLENGTH(labels); ++i) {
+        if (STRING_ELT(labels, i) == NA_STRING) {
+            fail("chromosome labels must not be missing");
+        }
+        const std::string text(Rf_translateCharUTF8(STRING_ELT(labels, i)));
+        if (text.empty()) fail("chromosome labels must not be empty");
+        const std::uint64_t key = fnv1a_utf8(text);
+        for (std::size_t previous = 0; previous < keys.size(); ++previous) {
+            if (texts[previous] == text) {
+                fail("chromosome labels must be unique by exact UTF-8 identity");
+            }
+            if (keys[previous] == key) {
+                fail("distinct chromosome labels collide under FNV-1a");
+            }
+        }
+        texts.push_back(text);
+        keys.push_back(key);
+    }
+    return keys;
 }
 
 std::size_t segment_endpoint(const double* position, std::size_t start,
@@ -181,9 +219,10 @@ SEXP make_segment_columns(const std::vector<SegmentRecord>& records) {
 extern "C" SEXP C_gsim_hapnest_founders(
     SEXP reference_h1, SEXP reference_h2, SEXP donor_codes, SEXP weights,
     SEXP population_n, SEXP population_ne, SEXP population_rho,
-    SEXP chromosome_blocks, SEXP positions, SEXP mutation_ages,
+    SEXP chromosome_blocks, SEXP chromosome_labels, SEXP positions,
+    SEXP mutation_ages,
     SEXP n_individuals_sexp, SEXP seed_sexp, SEXP return_genotypes_sexp,
-    SEXP offset_sexp) {
+    SEXP return_segments_sexp, SEXP offset_sexp) {
     try {
         if (TYPEOF(reference_h1) != RAWSXP || !Rf_isMatrix(reference_h1) ||
             TYPEOF(reference_h2) != RAWSXP || !Rf_isMatrix(reference_h2)) {
@@ -221,6 +260,7 @@ extern "C" SEXP C_gsim_hapnest_founders(
         const int offset = scalar_int(offset_sexp, "individual_offset");
         const double seed_value = scalar_real(seed_sexp, "seed");
         const bool return_genotypes = scalar_bool(return_genotypes_sexp, "return_genotypes");
+        const bool return_segments = scalar_bool(return_segments_sexp, "return_segments");
         if (n_individuals <= 0 || offset < 0 || seed_value < 0.0 ||
             seed_value > 9007199254740991.0) {
             fail("invalid n, offset, or seed");
@@ -277,6 +317,11 @@ extern "C" SEXP C_gsim_hapnest_founders(
             }
         }
         block_end.push_back(static_cast<std::size_t>(marker_count - 1));
+        const std::vector<std::uint64_t> stable_chromosome_keys =
+            chromosome_keys(chromosome_labels);
+        if (stable_chromosome_keys.size() != block_start.size()) {
+            fail("chromosome label count must equal chromosome block count");
+        }
 
         SEXP h1 = PROTECT(Rf_allocMatrix(RAWSXP, n_individuals, marker_count));
         SEXP h2 = PROTECT(Rf_allocMatrix(RAWSXP, n_individuals, marker_count));
@@ -295,7 +340,7 @@ extern "C" SEXP C_gsim_hapnest_founders(
                                                        static_cast<std::uint64_t>(phase);
                 for (std::size_t block = 0; block < block_start.size(); ++block) {
                     SplitMix64 rng(stream_seed(seed, global_haplotype,
-                                              static_cast<std::uint64_t>(block)));
+                                              stable_chromosome_keys[block]));
                     std::size_t position = block_start[block];
                     const std::size_t last = block_end[block];
                     while (position <= last) {
@@ -337,14 +382,18 @@ extern "C" SEXP C_gsim_hapnest_founders(
                             retained_alternative += retained == 1u ? 1 : 0;
                         }
 
-                        records.push_back(SegmentRecord{
-                            static_cast<double>(global_individual + 1u), phase + 1,
-                            static_cast<double>(global_haplotype + 1u),
-                            static_cast<int>(block + 1u), static_cast<int>(position + 1u),
-                            static_cast<int>(endpoint + 1u), donor + 1,
-                            static_cast<int>(pop + 1u), coalescent_age, sampled_length,
-                            REAL(positions)[endpoint] - REAL(positions)[position],
-                            copied_alternative, retained_alternative});
+                        if (return_segments) {
+                            records.push_back(SegmentRecord{
+                                static_cast<double>(global_individual + 1u), phase + 1,
+                                static_cast<double>(global_haplotype + 1u),
+                                static_cast<int>(block + 1u),
+                                static_cast<int>(position + 1u),
+                                static_cast<int>(endpoint + 1u), donor + 1,
+                                static_cast<int>(pop + 1u), coalescent_age,
+                                sampled_length,
+                                REAL(positions)[endpoint] - REAL(positions)[position],
+                                copied_alternative, retained_alternative});
+                        }
                         position = endpoint + 1u;
                     }
                 }
@@ -357,26 +406,63 @@ extern "C" SEXP C_gsim_hapnest_founders(
             }
         }
 
-        SEXP segment_columns = PROTECT(make_segment_columns(records));
-        const int output_count = return_genotypes ? 4 : 3;
+        SEXP segment_columns = R_NilValue;
+        if (return_segments) {
+            segment_columns = PROTECT(make_segment_columns(records));
+        }
+        const int output_count = 2 + (return_genotypes ? 1 : 0) +
+                                 (return_segments ? 1 : 0);
         SEXP out = PROTECT(Rf_allocVector(VECSXP, output_count));
         SET_VECTOR_ELT(out, 0, h1);
         SET_VECTOR_ELT(out, 1, h2);
+        std::vector<const char*> output_names{"h1", "h2"};
+        int output_index = 2;
         if (return_genotypes) {
-            SET_VECTOR_ELT(out, 2, genotypes);
-            SET_VECTOR_ELT(out, 3, segment_columns);
-            set_names(out, {"h1", "h2", "genotypes", "segments"});
-        } else {
-            SET_VECTOR_ELT(out, 2, segment_columns);
-            set_names(out, {"h1", "h2", "segments"});
+            SET_VECTOR_ELT(out, output_index++, genotypes);
+            output_names.push_back("genotypes");
         }
+        if (return_segments) {
+            SET_VECTOR_ELT(out, output_index, segment_columns);
+            output_names.push_back("segments");
+        }
+        set_names(out, output_names);
 
-        UNPROTECT(return_genotypes ? 5 : 4);
+        UNPROTECT(3 + (return_genotypes ? 1 : 0) +
+                  (return_segments ? 1 : 0));
         return out;
     } catch (const std::exception& ex) {
         Rf_error("HAPNEST founder core: %s", ex.what());
     } catch (...) {
         Rf_error("HAPNEST founder core: unknown native error");
+    }
+    return R_NilValue;
+}
+
+extern "C" SEXP C_gsim_hapnest_chromosome_keys(SEXP labels) {
+    try {
+        const std::vector<std::uint64_t> keys = chromosome_keys(labels);
+        if (keys.size() > static_cast<std::size_t>(
+                              std::numeric_limits<int>::max())) {
+            fail("too many chromosome labels for an R matrix");
+        }
+        SEXP out = PROTECT(Rf_allocVector(
+            RAWSXP, static_cast<R_xlen_t>(keys.size() * 8u)));
+        for (std::size_t column = 0; column < keys.size(); ++column) {
+            for (unsigned int byte = 0; byte < 8u; ++byte) {
+                RAW(out)[static_cast<R_xlen_t>(column * 8u + byte)] =
+                    static_cast<Rbyte>((keys[column] >> (byte * 8u)) & 0xffu);
+            }
+        }
+        SEXP dimensions = PROTECT(Rf_allocVector(INTSXP, 2));
+        INTEGER(dimensions)[0] = 8;
+        INTEGER(dimensions)[1] = static_cast<int>(keys.size());
+        Rf_setAttrib(out, R_DimSymbol, dimensions);
+        UNPROTECT(2);
+        return out;
+    } catch (const std::exception& ex) {
+        Rf_error("HAPNEST chromosome identity: %s", ex.what());
+    } catch (...) {
+        Rf_error("HAPNEST chromosome identity: unknown native error");
     }
     return R_NilValue;
 }

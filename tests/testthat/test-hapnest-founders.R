@@ -20,6 +20,7 @@ hapnest_fixture <- function(
   seed = 123,
   donor_phase = "hapnest",
   return_genotypes = TRUE,
+  return_segments = TRUE,
   individual_offset = 0L
 ) {
   gsim:::.gsim_hapnest_founders(
@@ -37,8 +38,65 @@ hapnest_fixture <- function(
     seed = seed,
     donor_phase = donor_phase,
     return_genotypes = return_genotypes,
+    return_segments = return_segments,
     individual_offset = individual_offset
   )
+}
+
+.chromosome_identity_fixture <- local({
+  source_labels <- c("chrZ", "01", "CHR1", "before", "after")
+  marker_number <- 5L
+  source_chromosome <- rep(source_labels, each = marker_number)
+  variant <- unlist(lapply(source_labels, function(label) {
+    paste0(label, "_v", seq_len(marker_number))
+  }), use.names = FALSE)
+  marker <- seq_along(variant)
+  h1 <- outer(seq_len(4L), marker, function(donor, at) {
+    (donor * 3L + at * 5L + (at %/% 3L)) %% 2L
+  })
+  h2 <- outer(seq_len(4L), marker, function(donor, at) {
+    (donor * 7L + at * 3L + (at %/% 2L) + 1L) %% 2L
+  })
+  rownames(h1) <- rownames(h2) <- paste0("donor", seq_len(4L))
+  colnames(h1) <- colnames(h2) <- variant
+  position <- rep(c(0, 0.07, 0.19, 0.42, 0.8), length(source_labels))
+
+  function(order = c("chrZ", "01", "CHR1"), labels = order,
+           n = 12L, seed = 717, individual_offset = 0L,
+           return_genotypes = TRUE, return_segments = TRUE) {
+    if (length(order) != length(labels)) stop("order and labels differ")
+    index <- unlist(lapply(order, function(label) {
+      which(source_chromosome == label)
+    }), use.names = FALSE)
+    gsim:::.gsim_hapnest_founders(
+      reference_haplotypes_h1 = h1[, index, drop = FALSE],
+      reference_haplotypes_h2 = h2[, index, drop = FALSE],
+      donor_population = rep("P", 4L),
+      ancestry_weights = c(P = 1),
+      N = c(P = 4), Ne = c(P = 4), rho = c(P = 1),
+      genetic_position = position[index],
+      mutation_age = rep(1e12, length(index)),
+      chromosome = rep(labels, each = marker_number),
+      n = n, seed = seed, return_genotypes = return_genotypes,
+      return_segments = return_segments,
+      individual_offset = individual_offset
+    )
+  }
+})
+
+.aligned_founder_segments <- function(out) {
+  segment <- out$segments
+  variant <- colnames(out$h1)
+  segment$start_variant <- variant[segment$start]
+  segment$end_variant <- variant[segment$end]
+  segment$start <- NULL
+  segment$end <- NULL
+  segment <- segment[order(
+    segment$individual, segment$phase, segment$chromosome,
+    segment$start_variant, method = "radix"
+  ), , drop = FALSE]
+  rownames(segment) <- NULL
+  segment
 }
 
 testthat::test_that("distribution scales use Julia's shape-scale conventions", {
@@ -179,6 +237,196 @@ testthat::test_that("chromosome blocks are independent and never crossed", {
   testthat::expect_true(all(out$segments$start <= out$segments$end))
 })
 
+testthat::test_that("chromosome identity uses exact UTF-8 FNV-1a keys", {
+  keys <- gsim:::.gsim_hapnest_chromosome_keys(
+    c("a", "hello", "1", "01", "chr1", "CHR1")
+  )
+  testthat::expect_identical(dim(keys), c(8L, 6L))
+  testthat::expect_identical(
+    as.integer(keys[, 1L]),
+    c(0x8cL, 0xecL, 0x01L, 0x86L, 0x4cL, 0xdcL, 0x63L, 0xafL)
+  )
+  testthat::expect_identical(
+    as.integer(keys[, 2L]),
+    c(0x0bL, 0xbdL, 0xaaL, 0x80L, 0x46L, 0xd8L, 0x30L, 0xa4L)
+  )
+  identity_keys <- apply(keys[, 3:6, drop = FALSE], 2L, paste, collapse = ":")
+  testthat::expect_equal(anyDuplicated(identity_keys), 0L)
+  testthat::expect_error(
+    gsim:::.gsim_hapnest_chromosome_keys(c("same", "same")),
+    "unique by exact UTF-8 identity"
+  )
+  testthat::expect_error(
+    gsim:::.gsim_hapnest_chromosome_keys(c("ok", "")), "nonempty"
+  )
+  testthat::expect_error(
+    gsim:::.gsim_hapnest_chromosome_keys(c("ok", NA_character_)),
+    "nonempty"
+  )
+})
+
+testthat::test_that("chromosomes are invariant to order, context, and removal", {
+  core <- c("chrZ", "01", "CHR1")
+  forward <- .chromosome_identity_fixture(core)
+  reverse <- .chromosome_identity_fixture(rev(core))
+  surrounded <- .chromosome_identity_fixture(
+    c("before", core, "after")
+  )
+
+  for (label in core) {
+    variants <- grep(paste0("^", label, "_"), colnames(forward$h1), value = TRUE)
+    alone <- .chromosome_identity_fixture(label)
+    forward_segments <- .aligned_founder_segments(forward)
+    forward_segments <- forward_segments[
+      forward_segments$chromosome == label, , drop = FALSE
+    ]
+    rownames(forward_segments) <- NULL
+    testthat::expect_identical(forward$h1[, variants, drop = FALSE], alone$h1)
+    testthat::expect_identical(forward$h2[, variants, drop = FALSE], alone$h2)
+    testthat::expect_identical(
+      forward$genotypes[, variants, drop = FALSE], alone$genotypes
+    )
+    testthat::expect_identical(
+      forward_segments, .aligned_founder_segments(alone)
+    )
+    testthat::expect_identical(
+      forward$h1[, variants, drop = FALSE],
+      reverse$h1[, variants, drop = FALSE]
+    )
+    testthat::expect_identical(
+      forward$h2[, variants, drop = FALSE],
+      reverse$h2[, variants, drop = FALSE]
+    )
+    testthat::expect_identical(
+      forward$genotypes[, variants, drop = FALSE],
+      reverse$genotypes[, variants, drop = FALSE]
+    )
+    reverse_segments <- .aligned_founder_segments(reverse)
+    reverse_segments <- reverse_segments[
+      reverse_segments$chromosome == label, , drop = FALSE
+    ]
+    rownames(reverse_segments) <- NULL
+    testthat::expect_identical(forward_segments, reverse_segments)
+    testthat::expect_identical(
+      forward$h1[, variants, drop = FALSE],
+      surrounded$h1[, variants, drop = FALSE]
+    )
+    testthat::expect_identical(
+      forward$h2[, variants, drop = FALSE],
+      surrounded$h2[, variants, drop = FALSE]
+    )
+    testthat::expect_identical(
+      forward$genotypes[, variants, drop = FALSE],
+      surrounded$genotypes[, variants, drop = FALSE]
+    )
+    surrounded_segments <- .aligned_founder_segments(surrounded)
+    surrounded_segments <- surrounded_segments[
+      surrounded_segments$chromosome == label, , drop = FALSE
+    ]
+    rownames(surrounded_segments) <- NULL
+    testthat::expect_identical(forward_segments, surrounded_segments)
+  }
+
+  retained <- .chromosome_identity_fixture(c("chrZ", "CHR1"))
+  retained_variants <- colnames(retained$h1)
+  testthat::expect_identical(
+    forward$h1[, retained_variants, drop = FALSE], retained$h1
+  )
+  testthat::expect_identical(
+    forward$h2[, retained_variants, drop = FALSE], retained$h2
+  )
+  testthat::expect_identical(
+    forward$genotypes[, retained_variants, drop = FALSE], retained$genotypes
+  )
+  retained_segments <- .aligned_founder_segments(forward)
+  retained_segments <- retained_segments[
+    retained_segments$chromosome %in% c("chrZ", "CHR1"), , drop = FALSE
+  ]
+  rownames(retained_segments) <- NULL
+  testthat::expect_identical(
+    retained_segments, .aligned_founder_segments(retained)
+  )
+})
+
+testthat::test_that("chromosome identity remains batch and option invariant", {
+  full <- .chromosome_identity_fixture(n = 12L, seed = 991)
+  batch1 <- .chromosome_identity_fixture(
+    n = 5L, seed = 991, individual_offset = 0L
+  )
+  batch2 <- .chromosome_identity_fixture(
+    n = 7L, seed = 991, individual_offset = 5L
+  )
+  testthat::expect_identical(rbind(batch1$h1, batch2$h1), full$h1)
+  testthat::expect_identical(rbind(batch1$h2, batch2$h2), full$h2)
+  testthat::expect_identical(
+    rbind(batch1$genotypes, batch2$genotypes), full$genotypes
+  )
+  combined_segments <- rbind(batch1$segments, batch2$segments)
+  rownames(combined_segments) <- NULL
+  expected_segments <- full$segments
+  rownames(expected_segments) <- NULL
+  testthat::expect_identical(combined_segments, expected_segments)
+
+  batch_a <- .chromosome_identity_fixture(
+    n = 3L, seed = 991, individual_offset = 0L
+  )
+  batch_b <- .chromosome_identity_fixture(
+    n = 4L, seed = 991, individual_offset = 3L
+  )
+  batch_c <- .chromosome_identity_fixture(
+    n = 5L, seed = 991, individual_offset = 7L
+  )
+  testthat::expect_identical(rbind(batch_a$h1, batch_b$h1, batch_c$h1), full$h1)
+  testthat::expect_identical(rbind(batch_a$h2, batch_b$h2, batch_c$h2), full$h2)
+  testthat::expect_identical(
+    rbind(batch_a$genotypes, batch_b$genotypes, batch_c$genotypes),
+    full$genotypes
+  )
+  three_batch_segments <- rbind(
+    batch_a$segments, batch_b$segments, batch_c$segments
+  )
+  rownames(three_batch_segments) <- NULL
+  testthat::expect_identical(three_batch_segments, expected_segments)
+
+  no_genotypes <- .chromosome_identity_fixture(
+    n = 12L, seed = 991, return_genotypes = FALSE
+  )
+  testthat::expect_identical(no_genotypes$h1, full$h1)
+  testthat::expect_identical(no_genotypes$h2, full$h2)
+  testthat::expect_null(no_genotypes$genotypes)
+  testthat::expect_identical(no_genotypes$segments, full$segments)
+
+  no_audit <- .chromosome_identity_fixture(
+    n = 12L, seed = 991, return_segments = FALSE
+  )
+  testthat::expect_identical(no_audit$h1, full$h1)
+  testthat::expect_identical(no_audit$h2, full$h2)
+  testthat::expect_identical(no_audit$genotypes, full$genotypes)
+  testthat::expect_null(no_audit$segments)
+
+  same <- .chromosome_identity_fixture(n = 12L, seed = 991)
+  changed_seed <- .chromosome_identity_fixture(n = 12L, seed = 992)
+  testthat::expect_identical(same, full)
+  testthat::expect_false(identical(changed_seed$h1, full$h1))
+  testthat::expect_false(identical(changed_seed$h2, full$h2))
+
+  relabelled <- .chromosome_identity_fixture(
+    order = c("chrZ", "01", "CHR1"),
+    labels = c("renamed", "01", "CHR1"), n = 12L, seed = 991
+  )
+  target <- grep("^chrZ_", colnames(full$h1), value = TRUE)
+  testthat::expect_true(
+    sum(full$h1[, target, drop = FALSE] !=
+          relabelled$h1[, target, drop = FALSE]) > 0L
+  )
+
+  set.seed(144)
+  expected_rng <- runif(5)
+  set.seed(144)
+  invisible(.chromosome_identity_fixture(n = 3L, seed = 991))
+  testthat::expect_identical(runif(5), expected_rng)
+})
+
 testthat::test_that("fixed seeds are reproducible, batch-stable, and ignore R RNG", {
   first <- hapnest_fixture(n = 4L, seed = 999)
   second <- hapnest_fixture(n = 4L, seed = 999)
@@ -203,25 +451,32 @@ testthat::test_that("fixed seeds are reproducible, batch-stable, and ignore R RN
   testthat::expect_identical(runif(3), expected_random)
 })
 
-testthat::test_that("the SplitMix64 stream has a fixed known answer", {
+testthat::test_that("the chromosome-identity SplitMix64 stream has a fixed known answer", {
   out <- hapnest_fixture(n = 2L, seed = 123)
   testthat::expect_identical(
     matrix(as.integer(out$h1), nrow = 2L),
-    matrix(c(1L, 1L, 1L, 1L, 0L, 0L, 0L, 0L), nrow = 2L)
+    matrix(c(0L, 1L, 1L, 0L, 0L, 1L, 1L, 1L), nrow = 2L)
   )
   testthat::expect_identical(
     matrix(as.integer(out$h2), nrow = 2L),
-    matrix(c(0L, 1L, 0L, 1L, 1L, 0L, 1L, 1L), nrow = 2L)
+    matrix(c(0L, 0L, 0L, 1L, 1L, 1L, 1L, 1L), nrow = 2L)
   )
   testthat::expect_identical(out$segments$donor_individual,
-                             c(4L, 3L, 4L, 4L, 1L))
-  testthat::expect_identical(out$segments$start, c(1L, 1L, 1L, 1L, 3L))
-  testthat::expect_identical(out$segments$end, c(4L, 4L, 4L, 2L, 4L))
+                             c(1L, 3L, 3L, 2L, 3L, 1L, 3L))
+  testthat::expect_identical(out$segments$start,
+                             c(1L, 1L, 3L, 1L, 3L, 1L, 3L))
+  testthat::expect_identical(out$segments$end,
+                             c(4L, 2L, 4L, 2L, 4L, 2L, 4L))
   testthat::expect_equal(
     out$segments$coalescent_age,
-    c(2.80906884665165624, 0.19192326337633564, 0.37243645910795636,
-      2.29588737857102476, 4.89290165842939384),
+    c(0.98068442466557693, 2.5335743400403934, 7.1458714583246126,
+      2.2154381978764333, 5.2176240403126002, 1.6445014810578393,
+      0.34636037613906134),
     tolerance = 1e-15
+  )
+  testthat::expect_identical(
+    out$settings$rng,
+    "SplitMix64 per (seed, global haplotype, chromosome identity)"
   )
 })
 
@@ -235,6 +490,15 @@ testthat::test_that("optional genotype counts are omitted without changing haplo
     with_counts$genotypes,
     gsim:::.gsim_hapnest_pair(with_counts$h1, with_counts$h2)
   )
+})
+
+testthat::test_that("optional segment audit is omitted without changing haplotypes", {
+  with_audit <- hapnest_fixture(seed = 654, return_segments = TRUE)
+  without_audit <- hapnest_fixture(seed = 654, return_segments = FALSE)
+  testthat::expect_null(without_audit$segments)
+  testthat::expect_identical(with_audit$h1, without_audit$h1)
+  testthat::expect_identical(with_audit$h2, without_audit$h2)
+  testthat::expect_identical(with_audit$genotypes, without_audit$genotypes)
 })
 
 testthat::test_that("invalid founder inputs fail explicitly", {
@@ -277,6 +541,8 @@ testthat::test_that("invalid founder inputs fail explicitly", {
                          "finite nonnegative")
   testthat::expect_error(hapnest_fixture(donor_phase = "pooled"),
                          "pooled sampling is not implemented")
+  testthat::expect_error(hapnest_fixture(return_segments = NA),
+                         "return_segments must be TRUE or FALSE")
   testthat::expect_error(hapnest_fixture(N = c(A = 3, B = 2)),
                          "number of reference individuals")
   testthat::expect_error(
