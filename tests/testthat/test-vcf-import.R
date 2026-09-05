@@ -25,8 +25,8 @@ testthat::test_that("strict VCF import preserves exact phase and metadata", {
   ))
   map <- data.frame(
     chromosome = c("2", "z", "z"),
-    base_pair_position = c(20, 12, 10),
-    genetic_position_cm = c(0, 0.25, 0), stringsAsFactors = FALSE
+    base_pair_position = c(20, 10, 12),
+    genetic_position_cm = c(0, 0, 0.25), stringsAsFactors = FALSE
   )
   samples <- data.frame(
     individual_id = c("s2", "s1"), family_id = c("f2", "f1"),
@@ -41,7 +41,7 @@ testthat::test_that("strict VCF import preserves exact phase and metadata", {
   testthat::expect_identical(.Random.seed, before)
   testthat::expect_identical(first$sample_ids, c("s1", "s2"))
   testthat::expect_identical(first$variant_ids, c("z:10:A:G", "v2", "v3"))
-  testthat::expect_identical(first$import$generated_variant_ids, "z:10:A:G")
+  testthat::expect_identical(first$import$generated_variant_id_count, 1L)
   reader <- gsim:::.gsim_hap_dataset_open(
     backend$gbits, backend$gmat, file.path(root, "reference"))
   z <- gsim:::.gsim_hap_dataset_load_chromosome(reader, "z")
@@ -171,7 +171,7 @@ testthat::test_that("strict VCF parser rejects every excluded call class", {
   compressed <- file.path(root, "unsupported.vcf.gz")
   file.copy(duplicate_id, compressed)
   testthat::expect_error(gsim:::.gsim_vcf_reader_open(backend$gmat, compressed),
-                         "unsupported")
+                         "duplicate final variant")
 })
 
 testthat::test_that("map and publication failures leave no partial dataset", {

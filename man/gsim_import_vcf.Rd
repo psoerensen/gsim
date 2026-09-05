@@ -4,21 +4,45 @@
 \alias{gsim_import_vcf}
 \title{Import a phased biallelic VCF reference panel}
 \usage{
-gsim_import_vcf(vcf, map, output, sample_metadata = NULL, overwrite = FALSE)
+gsim_import_vcf(
+  vcf,
+  map,
+  output,
+  sample_metadata = NULL,
+  samples = NULL,
+  chromosome = NULL,
+  region = NULL,
+  unsupported = c("skip", "error"),
+  overwrite = FALSE
+)
 }
 \arguments{
-\item{vcf}{Path to an uncompressed \code{.vcf} file.}
+\item{vcf}{Path to a plain \code{.vcf}, gzip VCF, or BGZF VCF. Compression is
+detected from file bytes rather than the name. BCF is unsupported.}
 
 \item{map}{A data frame containing \code{chromosome}, \code{genetic_position_cm}, and
-exactly one alignment key: \code{variant_id} or \code{base_pair_position}. Every VCF
-variant must match exactly once. Positions are cumulative cM and are not
-interpolated or converted during import.}
+exactly one alignment key. \code{variant_id} requests exact per-variant
+alignment. \code{base_pair_position} supplies at least two strictly increasing
+sparse knots per imported chromosome; cumulative cM is copied at knots and
+linearly interpolated between them without extrapolation.}
 
 \item{output}{Extension-free output prefix for \code{.hap}, \code{.bim}, and \code{.fam}.}
 
 \item{sample_metadata}{Optional data frame keyed by exact \code{individual_id}.
 It may supply \code{family_id} and sex codes 0/1/2. Parent IDs must be 0. The
 defaults are FID \code{reference}, unknown sex, and missing phenotype.}
+
+\item{samples}{\code{NULL} for all VCF samples, or unique exact sample IDs in the
+desired HAP/FAM order. Unselected sample genotype fields are not decoded.}
+
+\item{chromosome}{\code{NULL} or one exact chromosome label.}
+
+\item{region}{\code{NULL} or inclusive positive base-pair bounds \code{c(start, end)}.
+A region requires \code{chromosome}; the compressed stream is scanned rather
+than accessed through a tabix index.}
+
+\item{unsupported}{Either \code{"skip"} to count and omit ordinary unsupported
+biological records or \code{"error"} to stop at the first one.}
 
 \item{overwrite}{Whether to replace an existing complete triplet.}
 }
@@ -27,16 +51,22 @@ A lightweight \code{gsim_reference} descriptor. Biological alleles remain
 in packed files and are not returned as matrices.
 }
 \description{
-Imports an ordinary uncompressed text VCF directly into chromosome-wise
+Imports a plain, gzip, or BGZF VCF directly into chromosome-wise
 packed HAP v1 storage with aligned BIM and FAM metadata. The supported VCF
-subset is deliberately strict: samples must be diploid, every \code{GT} must be
-phased and one of \code{0|0}, \code{0|1}, \code{1|0}, or \code{1|1}, and variants must be
-biallelic uppercase A/C/G/T SNPs without missing calls. \code{GT} may occur at
-any position in FORMAT. No records are phased, imputed, normalized, flipped,
-split, or discarded.
+subset is deliberately bounded: retained selected-sample calls are diploid,
+complete, phased \code{0|0}, \code{0|1}, \code{1|0}, or \code{1|1}, and retained variants are
+biallelic uppercase A/C/G/T SNPs. \code{GT} may occur anywhere in FORMAT.
+Unsupported biological records are counted and either skipped or rejected;
+malformed VCF is always rejected. Nothing is phased, imputed, normalized,
+flipped, split, or modified.
 }
 \details{
 VCF REF is stored as bit 0 and BIM A2; VCF ALT is bit 1 and BIM A1.
 The left and right phased GT alleles become H1 and H2. Memory is bounded by
-one chromosome's two one-bit planes plus a two-byte-per-sample record buffer.
+one chromosome's two one-bit planes, one logical VCF line, a fixed 64 KiB
+decompression buffer, and a two-byte-per-selected-sample allele buffer.
+Sparse interpolation evaluates
+\code{cm_left + (cm_right - cm_left) * (bp - bp_left) / (bp_right - bp_left)}
+in that order using R double arithmetic. Exact knot positions copy the
+supplied value. Duplicate knots and repeated chromosome blocks are errors.
 }

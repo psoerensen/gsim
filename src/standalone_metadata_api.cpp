@@ -32,8 +32,13 @@ struct native_metadata_sample_metadata_handle {
 };
 
 struct native_metadata_phased_vcf_reader_handle {
-  explicit native_metadata_phased_vcf_reader_handle(const std::string& source)
-      : value(source) {}
+  native_metadata_phased_vcf_reader_handle(
+      const std::string& source, std::vector<std::string> samples,
+      const std::string& chromosome, bool has_region,
+      std::uint64_t region_start, std::uint64_t region_end,
+      bool skip_unsupported)
+      : value(source, samples, chromosome, has_region, region_start,
+              region_end, skip_unsupported) {}
   gsim::native::metadata::PhasedVcfReader value;
 };
 
@@ -297,15 +302,28 @@ native_metadata_status native_metadata_sample_metadata_write_fam(
 }
 
 native_metadata_status native_metadata_phased_vcf_reader_open(
-    const char* source_utf8, native_metadata_phased_vcf_reader_handle** output_handle) {
+    const char* source_utf8, const char* const* selected_samples,
+    std::uint64_t selected_sample_count, const char* selected_chromosome_utf8,
+    std::uint32_t has_region, std::uint64_t region_start,
+    std::uint64_t region_end, std::uint32_t skip_unsupported,
+    native_metadata_phased_vcf_reader_handle** output_handle) {
   if (output_handle != nullptr) *output_handle = nullptr;
   return protect([&] {
-    if (output_handle == nullptr) {
+    if (output_handle == nullptr || has_region > 1u || skip_unsupported > 1u ||
+        (selected_sample_count != 0u && selected_samples == nullptr)) {
       throw gsim::native::metadata::Error(gsim::native::metadata::StatusCode::invalid_argument,
-                        "VCF reader output must not be null");
+                        "invalid VCF reader open arguments");
+    }
+    std::vector<std::string> samples;
+    samples.reserve(static_cast<std::size_t>(selected_sample_count));
+    for (std::uint64_t i = 0; i < selected_sample_count; ++i) {
+      samples.emplace_back(required(selected_samples[i], "selected VCF sample"));
     }
     *output_handle = new native_metadata_phased_vcf_reader_handle(
-        required(source_utf8, "VCF source"));
+        required(source_utf8, "VCF source"), std::move(samples),
+        selected_chromosome_utf8 == nullptr ? std::string() :
+                                              std::string(selected_chromosome_utf8),
+        has_region == 1u, region_start, region_end, skip_unsupported == 1u);
   });
 }
 
@@ -331,6 +349,35 @@ native_metadata_status native_metadata_phased_vcf_reader_dimensions(
     *sample_count = static_cast<std::uint64_t>(handle->value.samples().size());
     *variant_count = static_cast<std::uint64_t>(handle->value.variants().size());
     *chromosome_count = static_cast<std::uint64_t>(handle->value.chromosomes().size());
+  });
+}
+
+native_metadata_status native_metadata_phased_vcf_reader_report(
+    const native_metadata_phased_vcf_reader_handle* handle,
+    const char** input_type, native_metadata_vcf_import_info* output_info) {
+  return protect([&] {
+    if (handle == nullptr || input_type == nullptr || output_info == nullptr) {
+      throw gsim::native::metadata::Error(
+          gsim::native::metadata::StatusCode::invalid_argument,
+          "invalid VCF import report request");
+    }
+    const auto& value = handle->value.report();
+    *input_type = value.input_type.c_str();
+    output_info->vcf_sample_count = value.vcf_sample_count;
+    output_info->selected_sample_count = value.selected_sample_count;
+    output_info->total_records_scanned = value.total_records_scanned;
+    output_info->retained_variants = value.retained_variants;
+    output_info->outside_selected_chromosome = value.outside_selected_chromosome;
+    output_info->outside_selected_region = value.outside_selected_region;
+    output_info->indels = value.indels;
+    output_info->multiallelic_records = value.multiallelic_records;
+    output_info->symbolic_or_breakend_alleles = value.symbolic_or_breakend_alleles;
+    output_info->other_unsupported_alleles = value.other_unsupported_alleles;
+    output_info->missing_gt = value.missing_gt;
+    output_info->unphased_gt = value.unphased_gt;
+    output_info->non_diploid_gt = value.non_diploid_gt;
+    output_info->duplicate_final_ids = value.duplicate_final_ids;
+    output_info->maximum_parsing_buffer_bytes = value.maximum_parsing_buffer_bytes;
   });
 }
 

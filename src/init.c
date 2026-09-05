@@ -55,7 +55,7 @@ extern SEXP C_gsim_metadata_write_bim(SEXP, SEXP);
 extern SEXP C_gsim_metadata_write_fam(SEXP, SEXP);
 extern SEXP C_gsim_metadata_read_bim(SEXP, SEXP);
 extern SEXP C_gsim_metadata_read_fam(SEXP, SEXP);
-extern SEXP C_gsim_metadata_vcf_open(SEXP, SEXP);
+extern SEXP C_gsim_metadata_vcf_open(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
 extern SEXP C_gsim_metadata_vcf_start(SEXP, SEXP);
 extern SEXP C_gsim_metadata_vcf_next(SEXP);
 extern SEXP C_gsim_metadata_vcf_close(SEXP);
@@ -105,7 +105,7 @@ static const R_CallMethodDef call_methods[] = {
     {"C_gsim_metadata_write_fam", (DL_FUNC) &C_gsim_metadata_write_fam, 2},
     {"C_gsim_metadata_read_bim", (DL_FUNC) &C_gsim_metadata_read_bim, 2},
     {"C_gsim_metadata_read_fam", (DL_FUNC) &C_gsim_metadata_read_fam, 2},
-    {"C_gsim_metadata_vcf_open", (DL_FUNC) &C_gsim_metadata_vcf_open, 2},
+    {"C_gsim_metadata_vcf_open", (DL_FUNC) &C_gsim_metadata_vcf_open, 6},
     {"C_gsim_metadata_vcf_start", (DL_FUNC) &C_gsim_metadata_vcf_start, 2},
     {"C_gsim_metadata_vcf_next", (DL_FUNC) &C_gsim_metadata_vcf_next, 1},
     {"C_gsim_metadata_vcf_close", (DL_FUNC) &C_gsim_metadata_vcf_close, 1},

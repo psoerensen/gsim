@@ -24,6 +24,24 @@ typedef struct native_metadata_metadata_write_info {
   uint64_t maximum_record_bytes;
 } native_metadata_metadata_write_info;
 
+typedef struct native_metadata_vcf_import_info {
+  uint64_t vcf_sample_count;
+  uint64_t selected_sample_count;
+  uint64_t total_records_scanned;
+  uint64_t retained_variants;
+  uint64_t outside_selected_chromosome;
+  uint64_t outside_selected_region;
+  uint64_t indels;
+  uint64_t multiallelic_records;
+  uint64_t symbolic_or_breakend_alleles;
+  uint64_t other_unsupported_alleles;
+  uint64_t missing_gt;
+  uint64_t unphased_gt;
+  uint64_t non_diploid_gt;
+  uint64_t duplicate_final_ids;
+  uint64_t maximum_parsing_buffer_bytes;
+} native_metadata_vcf_import_info;
+
 uint32_t native_metadata_abi_version(void);
 const char* native_metadata_library_version(void);
 const char* native_metadata_last_error(void);
@@ -81,12 +99,24 @@ native_metadata_status native_metadata_sample_metadata_write_fam(
     native_metadata_metadata_write_info* output_info);
 
 native_metadata_status native_metadata_phased_vcf_reader_open(
-    const char* source_utf8, native_metadata_phased_vcf_reader_handle** output_handle);
+    const char* source_utf8,
+    const char* const* selected_samples,
+    uint64_t selected_sample_count,
+    const char* selected_chromosome_utf8,
+    uint32_t has_region,
+    uint64_t region_start,
+    uint64_t region_end,
+    uint32_t skip_unsupported,
+    native_metadata_phased_vcf_reader_handle** output_handle);
 native_metadata_status native_metadata_phased_vcf_reader_close(
     native_metadata_phased_vcf_reader_handle* handle);
 native_metadata_status native_metadata_phased_vcf_reader_dimensions(
     const native_metadata_phased_vcf_reader_handle* handle, uint64_t* sample_count,
     uint64_t* variant_count, uint64_t* chromosome_count);
+native_metadata_status native_metadata_phased_vcf_reader_report(
+    const native_metadata_phased_vcf_reader_handle* handle,
+    const char** input_type,
+    native_metadata_vcf_import_info* output_info);
 native_metadata_status native_metadata_phased_vcf_reader_sample(
     const native_metadata_phased_vcf_reader_handle* handle, uint64_t index,
     const char** sample_id);

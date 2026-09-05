@@ -3,7 +3,7 @@ Type: Package
 Author: Peter Soerensen [aut, cre]
 Maintainer: Peter Soerensen <peter.sorensen@r-qgg.org>
 Title: Genomic Simulation for Validation Studies
-Version: 0.9.0
+Version: 0.10.0
 Depends: R (>= 3.5.0)
 Authors@R: person("Peter", "Sørensen", email = "peter.sorensen@r-qgg.org",
     role = c("aut", "cre"))
@@ -21,4 +21,4 @@ Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Encoding: UTF-8
 NeedsCompilation: yes
-SystemRequirements: C++17
+SystemRequirements: C++17, zlib (provided by standard R build toolchains)

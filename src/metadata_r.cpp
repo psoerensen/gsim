@@ -21,6 +21,24 @@ struct WriteInfo {
     std::uint64_t maximum_record_bytes;
 };
 
+struct VcfImportInfo {
+    std::uint64_t vcf_sample_count;
+    std::uint64_t selected_sample_count;
+    std::uint64_t total_records_scanned;
+    std::uint64_t retained_variants;
+    std::uint64_t outside_selected_chromosome;
+    std::uint64_t outside_selected_region;
+    std::uint64_t indels;
+    std::uint64_t multiallelic_records;
+    std::uint64_t symbolic_or_breakend_alleles;
+    std::uint64_t other_unsupported_alleles;
+    std::uint64_t missing_gt;
+    std::uint64_t unphased_gt;
+    std::uint64_t non_diploid_gt;
+    std::uint64_t duplicate_final_ids;
+    std::uint64_t maximum_parsing_buffer_bytes;
+};
+
 struct Backend {
     std::uint32_t (*abi_version)();
     const char* (*library_version)();
@@ -48,10 +66,13 @@ struct Backend {
                            std::uint32_t*);
     status_t (*sample_write)(const handle_t*, const char*, std::uint32_t,
                              WriteInfo*);
-    status_t (*vcf_open)(const char*, handle_t**);
+    status_t (*vcf_open)(const char*, const char* const*, std::uint64_t,
+                         const char*, std::uint32_t, std::uint64_t,
+                         std::uint64_t, std::uint32_t, handle_t**);
     status_t (*vcf_close)(handle_t*);
     status_t (*vcf_dimensions)(const handle_t*, std::uint64_t*, std::uint64_t*,
                                std::uint64_t*);
+    status_t (*vcf_report)(const handle_t*, const char**, VcfImportInfo*);
     status_t (*vcf_sample)(const handle_t*, std::uint64_t, const char**);
     status_t (*vcf_variant)(const handle_t*, std::uint64_t, const char**,
                             const char**, std::uint64_t*, const char**,
@@ -224,6 +245,7 @@ extern "C" SEXP C_gsim_metadata_backend() {
             GSIM_METADATA_ASSIGN(vcf_open, native_metadata_phased_vcf_reader_open);
             GSIM_METADATA_ASSIGN(vcf_close, native_metadata_phased_vcf_reader_close);
             GSIM_METADATA_ASSIGN(vcf_dimensions, native_metadata_phased_vcf_reader_dimensions);
+            GSIM_METADATA_ASSIGN(vcf_report, native_metadata_phased_vcf_reader_report);
             GSIM_METADATA_ASSIGN(vcf_sample, native_metadata_phased_vcf_reader_sample);
             GSIM_METADATA_ASSIGN(vcf_variant, native_metadata_phased_vcf_reader_variant);
             GSIM_METADATA_ASSIGN(vcf_chromosome, native_metadata_phased_vcf_reader_chromosome);
@@ -478,16 +500,65 @@ extern "C" SEXP C_gsim_metadata_read_fam(SEXP backend_pointer, SEXP path) {
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_metadata_vcf_open(SEXP backend_pointer, SEXP path) {
+extern "C" SEXP C_gsim_metadata_vcf_open(
+    SEXP backend_pointer, SEXP path, SEXP selected_samples,
+    SEXP selected_chromosome, SEXP region, SEXP unsupported) {
     try {
         Backend* backend = require_backend(backend_pointer);
         const std::string source = scalar_utf8(path, "VCF path");
+        std::vector<std::string> requested_samples;
+        if (selected_samples != R_NilValue) {
+            requested_samples = strings(selected_samples, "selected samples");
+            if (requested_samples.empty()) fail("selected samples must not be empty");
+        }
+        const auto requested_pointers = pointers(requested_samples);
+        std::string chromosome_value;
+        if (selected_chromosome != R_NilValue) {
+            chromosome_value = scalar_utf8(selected_chromosome, "selected chromosome");
+            if (chromosome_value.empty()) fail("selected chromosome must not be empty");
+        }
+        bool has_region = region != R_NilValue;
+        std::uint64_t region_values[2] = {0u, 0u};
+        if (has_region) {
+            if ((TYPEOF(region) != REALSXP && TYPEOF(region) != INTSXP) ||
+                XLENGTH(region) != 2) {
+                fail("region must be a numeric vector of length two");
+            }
+            for (R_xlen_t i = 0; i < 2; ++i) {
+                const double value = TYPEOF(region) == REALSXP ? REAL(region)[i] :
+                    (INTEGER(region)[i] == NA_INTEGER ? NA_REAL :
+                                                       static_cast<double>(INTEGER(region)[i]));
+                if (!std::isfinite(value) || value <= 0.0 || value != std::floor(value) ||
+                    value > 9007199254740991.0) {
+                    fail("region bounds must be exact positive integers");
+                }
+                region_values[i] = static_cast<std::uint64_t>(value);
+            }
+            if (chromosome_value.empty() || region_values[0] > region_values[1]) {
+                fail("region requires a chromosome and start <= end");
+            }
+        }
+        const std::string unsupported_value = scalar_utf8(unsupported, "unsupported");
+        if (unsupported_value != "skip" && unsupported_value != "error") {
+            fail("unsupported must be 'skip' or 'error'");
+        }
         handle_t* handle = nullptr;
-        check(backend, backend->vcf_open(source.c_str(), &handle), "gmat VCF open");
+        check(backend, backend->vcf_open(
+                  source.c_str(),
+                  requested_pointers.empty() ? nullptr : requested_pointers.data(),
+                  static_cast<std::uint64_t>(requested_pointers.size()),
+                  chromosome_value.empty() ? nullptr : chromosome_value.c_str(),
+                  has_region ? 1u : 0u, region_values[0], region_values[1],
+                  unsupported_value == "skip" ? 1u : 0u, &handle),
+              "native VCF open");
         std::uint64_t sample_count = 0, variant_count = 0, chromosome_count = 0;
         check(backend, backend->vcf_dimensions(handle, &sample_count, &variant_count,
                                                &chromosome_count),
               "gmat VCF dimensions");
+        const char* input_type = nullptr;
+        VcfImportInfo import_info{};
+        check(backend, backend->vcf_report(handle, &input_type, &import_info),
+              "native VCF report");
         if (sample_count > static_cast<std::uint64_t>(R_XLEN_T_MAX) ||
             variant_count > static_cast<std::uint64_t>(R_XLEN_T_MAX) ||
             chromosome_count > static_cast<std::uint64_t>(R_XLEN_T_MAX)) {
@@ -548,11 +619,34 @@ extern "C" SEXP C_gsim_metadata_vcf_open(SEXP backend_pointer, SEXP path) {
         SET_VECTOR_ELT(blocks, 0, block_label); SET_VECTOR_ELT(blocks, 1, block_first);
         SET_VECTOR_ELT(blocks, 2, block_count);
         set_names(blocks, {"chromosome", "first_variant", "variant_count"});
-        SEXP result = PROTECT(Rf_allocVector(VECSXP, 4));
+        SEXP report = PROTECT(Rf_allocVector(VECSXP, 16));
+        SET_VECTOR_ELT(report, 0, Rf_mkString(input_type));
+        const std::uint64_t report_values[] = {
+            import_info.vcf_sample_count, import_info.selected_sample_count,
+            import_info.total_records_scanned, import_info.retained_variants,
+            import_info.outside_selected_chromosome, import_info.outside_selected_region,
+            import_info.indels, import_info.multiallelic_records,
+            import_info.symbolic_or_breakend_alleles,
+            import_info.other_unsupported_alleles, import_info.missing_gt,
+            import_info.unphased_gt, import_info.non_diploid_gt,
+            import_info.duplicate_final_ids, import_info.maximum_parsing_buffer_bytes};
+        for (R_xlen_t i = 0; i < 15; ++i) {
+            SET_VECTOR_ELT(report, i + 1, Rf_ScalarReal(
+                static_cast<double>(report_values[static_cast<std::size_t>(i)])));
+        }
+        set_names(report, {"input_type", "vcf_sample_count", "selected_sample_count",
+                           "total_records_scanned", "retained_variants",
+                           "outside_selected_chromosome", "outside_selected_region",
+                           "indels", "multiallelic_records",
+                           "symbolic_or_breakend_alleles", "other_unsupported_alleles",
+                           "missing_gt", "unphased_gt", "non_diploid_gt",
+                           "duplicate_final_ids", "maximum_parsing_buffer_bytes"});
+        SEXP result = PROTECT(Rf_allocVector(VECSXP, 5));
         SET_VECTOR_ELT(result, 0, pointer); SET_VECTOR_ELT(result, 1, samples);
         SET_VECTOR_ELT(result, 2, variants); SET_VECTOR_ELT(result, 3, blocks);
-        set_names(result, {"pointer", "samples", "variants", "chromosomes"});
-        UNPROTECT(14);
+        SET_VECTOR_ELT(result, 4, report);
+        set_names(result, {"pointer", "samples", "variants", "chromosomes", "report"});
+        UNPROTECT(15);
         return result;
     } catch (const std::exception& ex) {
         Rf_error("gmat VCF open: %s", ex.what());

@@ -22,23 +22,34 @@
 
 #' Import a phased biallelic VCF reference panel
 #'
-#' Imports an ordinary uncompressed text VCF directly into chromosome-wise
+#' Imports a plain, gzip, or BGZF VCF directly into chromosome-wise
 #' packed HAP v1 storage with aligned BIM and FAM metadata. The supported VCF
-#' subset is deliberately strict: samples must be diploid, every `GT` must be
-#' phased and one of `0|0`, `0|1`, `1|0`, or `1|1`, and variants must be
-#' biallelic uppercase A/C/G/T SNPs without missing calls. `GT` may occur at
-#' any position in FORMAT. No records are phased, imputed, normalized, flipped,
-#' split, or discarded.
+#' subset is deliberately bounded: retained selected-sample calls are diploid,
+#' complete, phased `0|0`, `0|1`, `1|0`, or `1|1`, and retained variants are
+#' biallelic uppercase A/C/G/T SNPs. `GT` may occur anywhere in FORMAT.
+#' Unsupported biological records are counted and either skipped or rejected;
+#' malformed VCF is always rejected. Nothing is phased, imputed, normalized,
+#' flipped, split, or modified.
 #'
-#' @param vcf Path to an uncompressed `.vcf` file.
+#' @param vcf Path to a plain `.vcf`, gzip VCF, or BGZF VCF. Compression is
+#'   detected from file bytes rather than the name. BCF is unsupported.
 #' @param map A data frame containing `chromosome`, `genetic_position_cm`, and
-#'   exactly one alignment key: `variant_id` or `base_pair_position`. Every VCF
-#'   variant must match exactly once. Positions are cumulative cM and are not
-#'   interpolated or converted during import.
+#'   exactly one alignment key. `variant_id` requests exact per-variant
+#'   alignment. `base_pair_position` supplies at least two strictly increasing
+#'   sparse knots per imported chromosome; cumulative cM is copied at knots and
+#'   linearly interpolated between them without extrapolation.
 #' @param output Extension-free output prefix for `.hap`, `.bim`, and `.fam`.
 #' @param sample_metadata Optional data frame keyed by exact `individual_id`.
 #'   It may supply `family_id` and sex codes 0/1/2. Parent IDs must be 0. The
 #'   defaults are FID `reference`, unknown sex, and missing phenotype.
+#' @param samples `NULL` for all VCF samples, or unique exact sample IDs in the
+#'   desired HAP/FAM order. Unselected sample genotype fields are not decoded.
+#' @param chromosome `NULL` or one exact chromosome label.
+#' @param region `NULL` or inclusive positive base-pair bounds `c(start, end)`.
+#'   A region requires `chromosome`; the compressed stream is scanned rather
+#'   than accessed through a tabix index.
+#' @param unsupported Either `"skip"` to count and omit ordinary unsupported
+#'   biological records or `"error"` to stop at the first one.
 #' @param overwrite Whether to replace an existing complete triplet.
 #'
 #' @return A lightweight `gsim_reference` descriptor. Biological alleles remain
@@ -48,12 +59,24 @@
 #'
 #' @details VCF REF is stored as bit 0 and BIM A2; VCF ALT is bit 1 and BIM A1.
 #' The left and right phased GT alleles become H1 and H2. Memory is bounded by
-#' one chromosome's two one-bit planes plus a two-byte-per-sample record buffer.
-gsim_import_vcf <- function(vcf, map, output, sample_metadata = NULL,
-                            overwrite = FALSE) {
+#' one chromosome's two one-bit planes, one logical VCF line, a fixed 64 KiB
+#' decompression buffer, and a two-byte-per-selected-sample allele buffer.
+#' Sparse interpolation evaluates
+#' `cm_left + (cm_right - cm_left) * (bp - bp_left) / (bp_right - bp_left)`
+#' in that order using R double arithmetic. Exact knot positions copy the
+#' supplied value. Duplicate knots and repeated chromosome blocks are errors.
+gsim_import_vcf <- function(
+  vcf, map, output, sample_metadata = NULL, samples = NULL,
+  chromosome = NULL, region = NULL, unsupported = c("skip", "error"),
+  overwrite = FALSE
+) {
+  unsupported <- match.arg(unsupported)
   backend <- .gsim_public_backends()
   manifest <- .gsim_import_vcf_internal(
-    backend$packed, backend$metadata, vcf, map, output, sample_metadata, overwrite
+    backend$packed, backend$metadata, vcf, map, output,
+    sample_metadata = sample_metadata, samples = samples,
+    chromosome = chromosome, region = region, unsupported = unsupported,
+    overwrite = overwrite
   )
   reader <- .gsim_hap_dataset_open(backend$packed, backend$metadata, output)
   on.exit(.gsim_hap_dataset_close(reader), add = TRUE)

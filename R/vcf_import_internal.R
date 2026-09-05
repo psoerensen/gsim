@@ -1,15 +1,44 @@
 # Strict phased-VCF import: gsim owns parsing, identity, and packed bits,
 # and gsim owns map/sample alignment and HAP/BIM/FAM publication.
 
-.gsim_vcf_reader_open <- function(metadata_backend, vcf) {
+.gsim_vcf_reader_open <- function(
+  metadata_backend, vcf, samples = NULL, chromosome = NULL, region = NULL,
+  unsupported = "error"
+) {
   if (!inherits(metadata_backend, "gsim_metadata_backend")) {
     .gsim_stop("metadata_backend must be created by .gsim_metadata_backend().")
   }
   if (!is.character(vcf) || length(vcf) != 1L || is.na(vcf) || !nzchar(vcf)) {
     .gsim_stop("vcf must be one nonempty path string.")
   }
+  if (!is.null(samples)) {
+    samples <- enc2utf8(as.character(samples))
+    if (!length(samples) || anyNA(samples) || any(!nzchar(samples)) ||
+        anyDuplicated(samples)) {
+      .gsim_stop("samples must contain unique, nonmissing, nonempty VCF sample IDs.")
+    }
+  }
+  if (!is.null(chromosome)) {
+    chromosome <- enc2utf8(as.character(chromosome))
+    if (length(chromosome) != 1L || is.na(chromosome) || !nzchar(chromosome)) {
+      .gsim_stop("chromosome must be NULL or one nonempty exact label.")
+    }
+  }
+  if (!is.null(region)) {
+    region <- suppressWarnings(as.double(region))
+    if (length(region) != 2L || anyNA(region) || any(!is.finite(region)) ||
+        any(region <= 0) || any(region != floor(region)) ||
+        any(region > 2^53 - 1) || region[[1L]] > region[[2L]] ||
+        is.null(chromosome)) {
+      .gsim_stop("region requires chromosome and two exact positive integers with start <= end.")
+    }
+  }
+  unsupported <- match.arg(unsupported, c("skip", "error"))
   path <- normalizePath(vcf, winslash = "/", mustWork = TRUE)
-  value <- .Call(C_gsim_metadata_vcf_open, metadata_backend, enc2utf8(path))
+  value <- .Call(
+    C_gsim_metadata_vcf_open, metadata_backend, enc2utf8(path), samples,
+    chromosome, region, unsupported
+  )
   value$variants <- as.data.frame(value$variants, stringsAsFactors = FALSE)
   value$chromosomes <- as.data.frame(value$chromosomes, stringsAsFactors = FALSE)
   value$path <- path
@@ -55,46 +84,101 @@
     .gsim_stop("map must contain exactly one alignment key: variant_id or base_pair_position.")
   }
   chromosome <- enc2utf8(as.character(map$chromosome))
-  if (nrow(map) != nrow(variants) || anyNA(chromosome) ||
-      any(!nzchar(chromosome))) {
-    .gsim_stop("map must contain one nonmissing row per imported variant.")
+  if (!nrow(map) || anyNA(chromosome) || any(!nzchar(chromosome))) {
+    .gsim_stop("map chromosome labels must be nonmissing and nonempty.")
+  }
+  cm <- suppressWarnings(as.double(map$genetic_position_cm))
+  if (anyNA(cm) || any(!is.finite(cm)) || any(cm < 0)) {
+    .gsim_stop("map genetic_position_cm must be finite and nonnegative.")
   }
   if (has_id) {
     key <- enc2utf8(as.character(map$variant_id))
     imported_key <- variants$variant_id
-  } else {
-    bp <- suppressWarnings(as.double(map$base_pair_position))
-    if (anyNA(bp) || any(!is.finite(bp)) || any(bp <= 0) ||
-        any(bp != floor(bp)) || any(bp > 2^53 - 1)) {
-      .gsim_stop("map base_pair_position must contain exact positive integers.")
+    if (nrow(map) != nrow(variants) || anyNA(key) || any(!nzchar(key)) ||
+        anyDuplicated(key) || !setequal(key, imported_key)) {
+      .gsim_stop("map variant_id alignment must match every imported variant exactly once.")
     }
-    key <- paste(chromosome, format(bp, scientific = FALSE, trim = TRUE), sep = "\r")
-    imported_key <- paste(variants$chromosome,
-                          format(variants$base_pair_position,
-                                 scientific = FALSE, trim = TRUE), sep = "\r")
+    aligned <- map[match(imported_key, key), , drop = FALSE]
+    if (!identical(enc2utf8(as.character(aligned$chromosome)),
+                   variants$chromosome)) {
+      .gsim_stop("map chromosome labels do not match imported variants exactly.")
+    }
+    aligned_cm <- suppressWarnings(as.double(aligned$genetic_position_cm))
+    runs <- rle(variants$chromosome)
+    start <- cumsum(c(1L, head(runs$lengths, -1L)))
+    for (i in seq_along(start)) {
+      rows <- seq.int(start[[i]], length.out = runs$lengths[[i]])
+      if (any(diff(aligned_cm[rows]) < 0)) {
+        .gsim_stop("map genetic_position_cm must be nondecreasing within chromosome.")
+      }
+    }
+    attr(aligned_cm, "interpolation_policy") <- "exact variant_id alignment; no interpolation"
+    return(aligned_cm)
   }
-  if (anyNA(key) || any(!nzchar(key)) || anyDuplicated(key) ||
-      !setequal(key, imported_key)) {
-    .gsim_stop("map alignment keys must match every imported variant exactly once.")
+
+  bp <- suppressWarnings(as.double(map$base_pair_position))
+  if (anyNA(bp) || any(!is.finite(bp)) || any(bp <= 0) ||
+      any(bp != floor(bp)) || any(bp > 2^53 - 1)) {
+    .gsim_stop("map base_pair_position must contain exact positive integers.")
   }
-  aligned <- map[match(imported_key, key), , drop = FALSE]
-  if (!identical(enc2utf8(as.character(aligned$chromosome)),
-                 variants$chromosome)) {
-    .gsim_stop("map chromosome labels do not match imported variants exactly.")
+  map_runs <- rle(chromosome)
+  if (anyDuplicated(map_runs$values)) {
+    .gsim_stop("map chromosome labels must occupy one contiguous block.")
   }
-  cm <- suppressWarnings(as.double(aligned$genetic_position_cm))
-  if (anyNA(cm) || any(!is.finite(cm)) || any(cm < 0)) {
-    .gsim_stop("map genetic_position_cm must be finite and nonnegative.")
+  imported_chromosomes <- unique(variants$chromosome)
+  if (!setequal(map_runs$values, imported_chromosomes)) {
+    .gsim_stop("sparse map chromosome labels must match imported chromosomes exactly.")
   }
-  runs <- rle(variants$chromosome)
-  start <- cumsum(c(1L, head(runs$lengths, -1L)))
-  for (i in seq_along(start)) {
-    rows <- seq.int(start[[i]], length.out = runs$lengths[[i]])
+  map_start <- cumsum(c(1L, head(map_runs$lengths, -1L)))
+  for (i in seq_along(map_start)) {
+    rows <- seq.int(map_start[[i]], length.out = map_runs$lengths[[i]])
+    if (any(diff(bp[rows]) <= 0)) {
+      .gsim_stop("map base_pair_position must be strictly increasing within chromosome.")
+    }
     if (any(diff(cm[rows]) < 0)) {
       .gsim_stop("map genetic_position_cm must be nondecreasing within chromosome.")
     }
   }
-  cm
+  interpolated <- numeric(nrow(variants))
+  for (label in unique(variants$chromosome)) {
+    target_rows <- which(variants$chromosome == label)
+    knot_rows <- which(chromosome == label)
+    knot_bp <- bp[knot_rows]
+    knot_cm <- cm[knot_rows]
+    target_bp <- variants$base_pair_position[target_rows]
+    if (length(knot_rows) == 1L && all(target_bp == knot_bp)) {
+      interpolated[target_rows] <- knot_cm
+      next
+    }
+    if (length(knot_rows) < 2L) {
+      .gsim_stop(paste0("sparse map chromosome '", label,
+                        "' requires two knots unless every retained variant is at its sole knot."))
+    }
+    if (any(target_bp < knot_bp[[1L]]) ||
+        any(target_bp > utils::tail(knot_bp, 1L))) {
+      .gsim_stop(paste0("retained variants on chromosome '", label,
+                        "' fall outside the supplied map range; extrapolation is not allowed."))
+    }
+    left <- findInterval(target_bp, knot_bp)
+    exact <- knot_bp[left] == target_bp
+    values <- knot_cm[left]
+    between <- which(!exact)
+    if (length(between)) {
+      lo <- left[between]
+      hi <- lo + 1L
+      fraction <- (target_bp[between] - knot_bp[lo]) /
+        (knot_bp[hi] - knot_bp[lo])
+      values[between] <- knot_cm[lo] +
+        (knot_cm[hi] - knot_cm[lo]) * fraction
+    }
+    interpolated[target_rows] <- values
+  }
+  attr(interpolated, "interpolation_policy") <- paste(
+    "piecewise linear cumulative-cM interpolation:",
+    "exact knots copied; otherwise cm_left + (cm_right - cm_left) *",
+    "(bp - bp_left) / (bp_right - bp_left); no extrapolation"
+  )
+  interpolated
 }
 
 .gsim_vcf_sample_metadata <- function(samples, sample_metadata = NULL) {
@@ -134,25 +218,36 @@
 
 .gsim_import_vcf_internal <- function(
   backend, metadata_backend, vcf, map, output, sample_metadata = NULL,
-  overwrite = FALSE
+  samples = NULL, chromosome = NULL, region = NULL,
+  unsupported = "error", overwrite = FALSE
 ) {
-  reader <- .gsim_vcf_reader_open(metadata_backend, vcf)
+  reader <- .gsim_vcf_reader_open(
+    metadata_backend, vcf, samples, chromosome, region, unsupported
+  )
   on.exit(try(.gsim_vcf_reader_close(reader), silent = TRUE), add = TRUE)
   variants <- reader$variants
-  variants$genetic_position_cm <- .gsim_vcf_align_map(map, variants)
-  samples <- .gsim_vcf_sample_metadata(reader$samples, sample_metadata)
+  aligned_map <- .gsim_vcf_align_map(map, variants)
+  interpolation_policy <- attr(aligned_map, "interpolation_policy")
+  variants$genetic_position_cm <- unname(aligned_map)
+  sample_table <- .gsim_vcf_sample_metadata(reader$samples, sample_metadata)
   provenance <- list(
-    operation = "strict phased biallelic VCF import",
+    operation = "streaming phased biallelic VCF import",
     source_vcf = reader$path,
-    vcf_subset = "plain text; diploid phased GT; biallelic uppercase A/C/G/T SNPs",
-    generated_variant_ids = variants$variant_id[variants$generated_id],
-    map_alignment = if ("variant_id" %in% names(map)) "exact variant_id" else
-      "exact chromosome and base_pair_position",
+    input_type = reader$report$input_type,
+    vcf_subset = paste(
+      "plain/gzip/BGZF VCF; selected diploid phased GT;",
+      "biallelic uppercase A/C/G/T SNPs"
+    ),
+    unsupported = unsupported,
+    selected_chromosome = chromosome,
+    selected_region = region,
+    generated_variant_id_count = sum(variants$generated_id),
+    map_alignment = interpolation_policy,
     allele_orientation = "VCF REF = bit 0 = BIM A2; VCF ALT = bit 1 = BIM A1",
     phase_orientation = "GT left allele = H1; GT right allele = H2"
   )
   dataset <- .gsim_hap_dataset_create(
-    backend, metadata_backend, output, samples, overwrite, provenance
+    backend, metadata_backend, output, sample_table, overwrite, provenance
   )
   completed <- FALSE
   on.exit({
@@ -203,15 +298,26 @@
   }
   manifest <- .gsim_hap_dataset_finalize(dataset)
   completed <- TRUE
-  manifest$import <- list(
-    vcf_bytes = unname(file.info(reader$path)$size),
+  output_sizes <- unname(file.info(manifest$paths)$size)
+  names(output_sizes) <- names(manifest$paths)
+  manifest$import <- c(reader$report, list(
+    input_path = reader$path,
+    input_bytes = unname(file.info(reader$path)$size),
+    output_chromosomes = stats::setNames(
+      as.integer(reader$chromosomes$variant_count), reader$chromosomes$chromosome
+    ),
+    output_file_bytes = output_sizes,
     peak_chromosome_packed_bytes = peak_packed,
     native_record_allele_buffer_bytes = 2 * length(reader$samples),
     r_record_allele_buffer_bytes = 2 * length(reader$samples),
     maximum_record_allele_buffer_bytes = 4 * length(reader$samples),
     dense_haplotype_bytes_avoided = 2 * nrow(variants) * length(reader$samples),
     dense_genotype_bytes_avoided = nrow(variants) * length(reader$samples),
-    generated_variant_ids = variants$variant_id[variants$generated_id]
-  )
+    dense_haplotype_matrix_allocated = FALSE,
+    dense_genotype_matrix_allocated = FALSE,
+    full_uncompressed_temporary_vcf_created = FALSE,
+    generated_variant_id_count = sum(variants$generated_id),
+    genetic_map_interpolation_policy = interpolation_policy
+  ))
   manifest
 }

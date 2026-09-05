@@ -62,7 +62,8 @@ with `gsim`.
 
 ## Packed reference workflow
 
-The supported packed workflow imports a strict phased biallelic text VCF and
+The supported packed workflow imports a phased biallelic plain, gzip, or BGZF
+VCF and
 then simulates HAPNEST-compatible founders plus Mendelian pedigree descendants
 without a dense whole-genome allele or genotype matrix:
 
@@ -80,10 +81,15 @@ All packed storage, VCF parsing, and dataset writing code is compiled directly
 into `gsim`; no sibling packages, shared-library paths, or environment variables
 are required. VCF REF is bit 0/BIM A2, ALT is bit 1/BIM A1, and phased GT
 left/right order is retained as H1/H2. The importer
-accepts only uncompressed VCF, complete phased diploid GT, and uppercase
-biallelic A/C/G/T SNPs. The required map supplies exact cumulative cM values;
-there is no interpolation. Each chromosome is loaded, simulated, written, and
-released before the next.
+retains complete phased diploid GT at uppercase biallelic A/C/G/T SNPs.
+Unsupported biological records may be counted and skipped. A sparse physical
+map supplies cumulative cM knots, with deterministic interpolation and no
+extrapolation. Each chromosome is loaded, simulated, written, and released
+before the next.
+
+See [the direct 1000 Genomes chromosome 22 example](inst/examples/1000G_chr22.R)
+for an internet-enabled GRCh37 workflow using the official approximately
+196 MB IGSR VCF directly, without bcftools or htslib.
 
 ## Pedigree and record workloads
 
