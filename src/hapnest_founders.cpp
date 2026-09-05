@@ -222,7 +222,8 @@ extern "C" SEXP C_gsim_hapnest_founders(
     SEXP chromosome_blocks, SEXP chromosome_labels, SEXP positions,
     SEXP mutation_ages,
     SEXP n_individuals_sexp, SEXP seed_sexp, SEXP return_genotypes_sexp,
-    SEXP return_segments_sexp, SEXP offset_sexp) {
+    SEXP return_segments_sexp, SEXP return_haplotypes_sexp,
+    SEXP offset_sexp) {
     try {
         if (TYPEOF(reference_h1) != RAWSXP || !Rf_isMatrix(reference_h1) ||
             TYPEOF(reference_h2) != RAWSXP || !Rf_isMatrix(reference_h2)) {
@@ -261,9 +262,13 @@ extern "C" SEXP C_gsim_hapnest_founders(
         const double seed_value = scalar_real(seed_sexp, "seed");
         const bool return_genotypes = scalar_bool(return_genotypes_sexp, "return_genotypes");
         const bool return_segments = scalar_bool(return_segments_sexp, "return_segments");
+        const bool return_haplotypes = scalar_bool(return_haplotypes_sexp, "return_haplotypes");
         if (n_individuals <= 0 || offset < 0 || seed_value < 0.0 ||
             seed_value > 9007199254740991.0) {
             fail("invalid n, offset, or seed");
+        }
+        if (return_genotypes && !return_haplotypes) {
+            fail("genotype output requires haplotype output");
         }
         const std::uint64_t seed = static_cast<std::uint64_t>(seed_value);
 
@@ -323,8 +328,12 @@ extern "C" SEXP C_gsim_hapnest_founders(
             fail("chromosome label count must equal chromosome block count");
         }
 
-        SEXP h1 = PROTECT(Rf_allocMatrix(RAWSXP, n_individuals, marker_count));
-        SEXP h2 = PROTECT(Rf_allocMatrix(RAWSXP, n_individuals, marker_count));
+        SEXP h1 = R_NilValue;
+        SEXP h2 = R_NilValue;
+        if (return_haplotypes) {
+            h1 = PROTECT(Rf_allocMatrix(RAWSXP, n_individuals, marker_count));
+            h2 = PROTECT(Rf_allocMatrix(RAWSXP, n_individuals, marker_count));
+        }
         SEXP genotypes = R_NilValue;
         if (return_genotypes) genotypes = PROTECT(Rf_allocMatrix(RAWSXP, n_individuals, marker_count));
         std::vector<SegmentRecord> records;
@@ -333,7 +342,9 @@ extern "C" SEXP C_gsim_hapnest_founders(
             const std::uint64_t global_individual =
                 static_cast<std::uint64_t>(offset) + static_cast<std::uint64_t>(individual);
             for (int phase = 0; phase < 2; ++phase) {
-                Rbyte* output = phase == 0 ? RAW(h1) : RAW(h2);
+                Rbyte* output = return_haplotypes
+                                    ? (phase == 0 ? RAW(h1) : RAW(h2))
+                                    : nullptr;
                 const Rbyte* phase_reference =
                     phase == 0 ? RAW(reference_h1) : RAW(reference_h2);
                 const std::uint64_t global_haplotype = global_individual * 2u +
@@ -378,7 +389,10 @@ extern "C" SEXP C_gsim_hapnest_founders(
                                 allele == 1u && coalescent_age < REAL(mutation_ages)[marker]
                                     ? static_cast<Rbyte>(1u)
                                     : static_cast<Rbyte>(0u);
-                            output[individual + n_individuals * static_cast<int>(marker)] = retained;
+                            if (return_haplotypes) {
+                                output[individual + n_individuals *
+                                                       static_cast<int>(marker)] = retained;
+                            }
                             retained_alternative += retained == 1u ? 1 : 0;
                         }
 
@@ -410,13 +424,18 @@ extern "C" SEXP C_gsim_hapnest_founders(
         if (return_segments) {
             segment_columns = PROTECT(make_segment_columns(records));
         }
-        const int output_count = 2 + (return_genotypes ? 1 : 0) +
+        const int output_count = (return_haplotypes ? 2 : 0) +
+                                 (return_genotypes ? 1 : 0) +
                                  (return_segments ? 1 : 0);
         SEXP out = PROTECT(Rf_allocVector(VECSXP, output_count));
-        SET_VECTOR_ELT(out, 0, h1);
-        SET_VECTOR_ELT(out, 1, h2);
-        std::vector<const char*> output_names{"h1", "h2"};
-        int output_index = 2;
+        std::vector<const char*> output_names;
+        int output_index = 0;
+        if (return_haplotypes) {
+            SET_VECTOR_ELT(out, output_index++, h1);
+            SET_VECTOR_ELT(out, output_index++, h2);
+            output_names.push_back("h1");
+            output_names.push_back("h2");
+        }
         if (return_genotypes) {
             SET_VECTOR_ELT(out, output_index++, genotypes);
             output_names.push_back("genotypes");
@@ -427,7 +446,8 @@ extern "C" SEXP C_gsim_hapnest_founders(
         }
         set_names(out, output_names);
 
-        UNPROTECT(3 + (return_genotypes ? 1 : 0) +
+        UNPROTECT(1 + (return_haplotypes ? 2 : 0) +
+                  (return_genotypes ? 1 : 0) +
                   (return_segments ? 1 : 0));
         return out;
     } catch (const std::exception& ex) {

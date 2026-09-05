@@ -61,6 +61,7 @@ NULL
   donor_phase = "hapnest",
   return_genotypes = TRUE,
   return_segments = TRUE,
+  return_haplotypes = TRUE,
   individual_offset = 0L
 ) {
   reference_haplotypes_h1 <- .gsim_hapnest_raw_matrix(
@@ -184,6 +185,13 @@ NULL
       is.na(return_segments)) {
     .gsim_stop("return_segments must be TRUE or FALSE.")
   }
+  if (!is.logical(return_haplotypes) || length(return_haplotypes) != 1L ||
+      is.na(return_haplotypes)) {
+    .gsim_stop("return_haplotypes must be TRUE or FALSE.")
+  }
+  if (!return_haplotypes && return_genotypes) {
+    .gsim_stop("return_genotypes requires return_haplotypes = TRUE.")
+  }
 
   ans <- .Call(
     C_gsim_hapnest_founders,
@@ -202,13 +210,14 @@ NULL
     as.double(seed),
     return_genotypes,
     return_segments,
+    return_haplotypes,
     individual_offset
   )
 
   ids <- paste0("syn", individual_offset + seq_len(n))
   variants <- colnames(reference_haplotypes_h1)
-  dimnames(ans$h1) <- list(ids, variants)
-  dimnames(ans$h2) <- list(ids, variants)
+  if (!is.null(ans$h1)) dimnames(ans$h1) <- list(ids, variants)
+  if (!is.null(ans$h2)) dimnames(ans$h2) <- list(ids, variants)
   if (!is.null(ans$genotypes)) dimnames(ans$genotypes) <- list(ids, variants)
 
   if (return_segments) {

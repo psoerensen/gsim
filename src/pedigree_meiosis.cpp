@@ -7,6 +7,7 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace meiosis {
@@ -86,6 +87,54 @@ void validate_parent_and_map(SEXP parent_h1, SEXP parent_h2, SEXP positions) {
         }
         previous = position;
     }
+}
+
+void validate_positions(SEXP positions) {
+    if (TYPEOF(positions) != REALSXP || XLENGTH(positions) == 0) {
+        fail("genetic positions must be a nonempty numeric vector");
+    }
+    double previous = REAL(positions)[0];
+    if (!R_FINITE(previous)) fail("genetic positions must be finite");
+    for (R_xlen_t marker = 1; marker < XLENGTH(positions); ++marker) {
+        const double position = REAL(positions)[marker];
+        if (!R_FINITE(position) || position < previous) {
+            fail("genetic positions must be finite and nondecreasing");
+        }
+        previous = position;
+    }
+}
+
+struct Events {
+    std::vector<double> crossovers;
+    int starting_haplotype;
+};
+
+Events draw_events(SEXP positions, std::uint64_t seed, SEXP animal,
+                   SEXP chromosome, int side) {
+    validate_positions(positions);
+    SplitMix64 rng(stream_seed(seed, animal, chromosome, side));
+    const double first = REAL(positions)[0];
+    const double last = REAL(positions)[XLENGTH(positions) - 1];
+    const double length = last - first;
+    std::size_t crossover_count = 0u;
+    if (length > 0.0) {
+        double arrival = 0.0;
+        for (;;) {
+            arrival += -std::log(rng.open01());
+            if (arrival > length) break;
+            if (crossover_count == std::numeric_limits<std::size_t>::max()) {
+                fail("crossover count exceeds the supported range");
+            }
+            ++crossover_count;
+        }
+    }
+    std::vector<double> crossovers(crossover_count);
+    for (double& crossover : crossovers) {
+        crossover = first + length * rng.open01();
+    }
+    std::sort(crossovers.begin(), crossovers.end());
+    const int starting_haplotype = rng.open01() < 0.5 ? 1 : 2;
+    return {std::move(crossovers), starting_haplotype};
 }
 
 SEXP materialize(SEXP parent_h1, SEXP parent_h2, SEXP positions,
@@ -177,33 +226,17 @@ extern "C" SEXP C_gsim_meiosis_draw(
             meiosis::fail("return_audit must be one logical value");
         }
         const int side = INTEGER(side_sexp)[0];
-        meiosis::SplitMix64 rng(meiosis::stream_seed(
-            static_cast<std::uint64_t>(REAL(seed_sexp)[0]), animal,
-            chromosome, side));
-        const double first = REAL(positions)[0];
-        const double last = REAL(positions)[XLENGTH(positions) - 1];
-        const double length = last - first;
-
-        R_xlen_t crossover_count = 0;
-        if (length > 0.0) {
-            double arrival = 0.0;
-            for (;;) {
-                arrival += -std::log(rng.open01());
-                if (arrival > length) break;
-                if (crossover_count == std::numeric_limits<R_xlen_t>::max()) {
-                    meiosis::fail("crossover count exceeds the supported range");
-                }
-                ++crossover_count;
-            }
-        }
+        const meiosis::Events events = meiosis::draw_events(
+            positions, static_cast<std::uint64_t>(REAL(seed_sexp)[0]), animal,
+            chromosome, side);
+        const R_xlen_t crossover_count =
+            static_cast<R_xlen_t>(events.crossovers.size());
         SEXP crossovers = PROTECT(Rf_allocVector(REALSXP, crossover_count));
         for (R_xlen_t i = 0; i < crossover_count; ++i) {
-            REAL(crossovers)[i] = first + length * rng.open01();
+            REAL(crossovers)[i] =
+                events.crossovers[static_cast<std::size_t>(i)];
         }
-        if (crossover_count > 1) {
-            std::sort(REAL(crossovers), REAL(crossovers) + crossover_count);
-        }
-        const int starting_haplotype = rng.open01() < 0.5 ? 1 : 2;
+        const int starting_haplotype = events.starting_haplotype;
         SEXP gamete = PROTECT(meiosis::materialize(
             parent_h1, parent_h2, positions, REAL(crossovers),
             crossover_count, starting_haplotype));
@@ -223,6 +256,54 @@ extern "C" SEXP C_gsim_meiosis_draw(
         Rf_error("pedigree meiosis draw: %s", ex.what());
     } catch (...) {
         Rf_error("pedigree meiosis draw: unknown native error");
+    }
+    return R_NilValue;
+}
+
+extern "C" SEXP C_gsim_meiosis_plan(
+    SEXP positions, SEXP seed_sexp, SEXP animal, SEXP chromosome,
+    SEXP side_sexp) {
+    try {
+        meiosis::validate_positions(positions);
+        if (TYPEOF(seed_sexp) != REALSXP || XLENGTH(seed_sexp) != 1 ||
+            !R_FINITE(REAL(seed_sexp)[0]) || REAL(seed_sexp)[0] < 0.0) {
+            meiosis::fail("seed must be one finite nonnegative numeric value");
+        }
+        if (TYPEOF(side_sexp) != INTSXP || XLENGTH(side_sexp) != 1 ||
+            (INTEGER(side_sexp)[0] != 1 && INTEGER(side_sexp)[0] != 2)) {
+            meiosis::fail("parental side must be 1 or 2");
+        }
+        const meiosis::Events events = meiosis::draw_events(
+            positions, static_cast<std::uint64_t>(REAL(seed_sexp)[0]), animal,
+            chromosome, INTEGER(side_sexp)[0]);
+        const R_xlen_t count = static_cast<R_xlen_t>(events.crossovers.size());
+        SEXP crossovers = PROTECT(Rf_allocVector(REALSXP, count));
+        SEXP boundaries = PROTECT(Rf_allocVector(INTSXP, count));
+        for (R_xlen_t i = 0; i < count; ++i) {
+            const double crossover =
+                events.crossovers[static_cast<std::size_t>(i)];
+            REAL(crossovers)[i] = crossover;
+            const double* begin = REAL(positions);
+            const double* end = begin + XLENGTH(positions);
+            const double* boundary = std::lower_bound(begin, end, crossover);
+            const R_xlen_t index = static_cast<R_xlen_t>(boundary - begin);
+            if (index > std::numeric_limits<int>::max()) {
+                meiosis::fail("crossover boundary exceeds R integer range");
+            }
+            INTEGER(boundaries)[i] = static_cast<int>(index);
+        }
+        SEXP out = PROTECT(Rf_allocVector(VECSXP, 3));
+        SET_VECTOR_ELT(out, 0, Rf_ScalarInteger(events.starting_haplotype));
+        SET_VECTOR_ELT(out, 1, crossovers);
+        SET_VECTOR_ELT(out, 2, boundaries);
+        meiosis::set_names(out, "starting_haplotype", "crossovers",
+                           "boundaries");
+        UNPROTECT(3);
+        return out;
+    } catch (const std::exception& ex) {
+        Rf_error("pedigree meiosis plan: %s", ex.what());
+    } catch (...) {
+        Rf_error("pedigree meiosis plan: unknown native error");
     }
     return R_NilValue;
 }
