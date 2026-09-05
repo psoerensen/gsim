@@ -5,3 +5,12 @@
 *.Rcheck/
 *.tar.gz
 Rplots.pdf
+
+src/*.o
+src/*.obj
+src/*.dll
+src/*.so
+src/*.dylib
+src/*.lib
+src/*.a
+src/*.exe
