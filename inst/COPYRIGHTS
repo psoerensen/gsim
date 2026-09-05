@@ -1,0 +1,57 @@
+gsim is distributed under the GNU General Public License version 3 (GPL-3).
+
+Founder-model provenance
+------------------------
+
+The gsim founder model is a clean native C++ implementation informed by the
+scientific model and behavior of HAPNEST. No HAPNEST source code is included.
+The reference source was inspected at the pinned revision:
+
+https://github.com/intervene-EU-H2020/synthetic_data/tree/ba52da1a63cf609306ea92540b3d130fa1efd213
+
+The corresponding paper is Wharrie et al. (2023), "HAPNEST: efficient,
+large-scale generation and evaluation of synthetic datasets for human
+genetics", Bioinformatics 39, btad535:
+
+https://doi.org/10.1093/bioinformatics/btad535
+
+HAPNEST is distributed under GPL-3; its license at the pinned revision is:
+
+https://github.com/intervene-EU-H2020/synthetic_data/blob/ba52da1a63cf609306ea92540b3d130fa1efd213/LICENSE
+
+gbits provenance and MIT notice
+-------------------------------
+
+Internalized packed-haplotype, HAP v1, and BED components originated in our
+gbits project at revision 089bf1e69dea356248a62bb2d3bded4e84c64f7f. The
+adapted components retain the following applicable MIT notice:
+
+MIT License
+
+Copyright (c) 2026 gbits contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+gmat provenance
+---------------
+
+Internalized variant/sample metadata, BIM/FAM, and strict phased-VCF
+components originated in our own gmat project at revision
+33d6751abf00c41a15223459df7cae028d54b4b5. They are distributed as part of
+gsim under gsim's GPL-3 license.

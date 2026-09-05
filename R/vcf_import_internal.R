@@ -1,15 +1,15 @@
-# Strict phased-VCF import. gmat owns parsing/identity, gbits owns packed bits,
+# Strict phased-VCF import: gsim owns parsing, identity, and packed bits,
 # and gsim owns map/sample alignment and HAP/BIM/FAM publication.
 
 .gsim_vcf_reader_open <- function(metadata_backend, vcf) {
-  if (!inherits(metadata_backend, "gsim_gmat_backend")) {
-    .gsim_stop("metadata_backend must be created by .gsim_gmat_backend().")
+  if (!inherits(metadata_backend, "gsim_metadata_backend")) {
+    .gsim_stop("metadata_backend must be created by .gsim_metadata_backend().")
   }
   if (!is.character(vcf) || length(vcf) != 1L || is.na(vcf) || !nzchar(vcf)) {
     .gsim_stop("vcf must be one nonempty path string.")
   }
   path <- normalizePath(vcf, winslash = "/", mustWork = TRUE)
-  value <- .Call(C_gsim_gmat_vcf_open, metadata_backend, enc2utf8(path))
+  value <- .Call(C_gsim_metadata_vcf_open, metadata_backend, enc2utf8(path))
   value$variants <- as.data.frame(value$variants, stringsAsFactors = FALSE)
   value$chromosomes <- as.data.frame(value$chromosomes, stringsAsFactors = FALSE)
   value$path <- path
@@ -23,7 +23,7 @@
     .gsim_stop("reader is not a gsim VCF reader.")
   }
   if (reader$closed) return(invisible(reader))
-  invisible(.Call(C_gsim_gmat_vcf_close, reader$pointer))
+  invisible(.Call(C_gsim_metadata_vcf_close, reader$pointer))
   reader$closed <- TRUE
   invisible(reader)
 }
@@ -32,7 +32,7 @@
   if (!inherits(reader, "gsim_vcf_reader") || reader$closed) {
     .gsim_stop("reader is not an open gsim VCF reader.")
   }
-  invisible(.Call(C_gsim_gmat_vcf_start, reader$pointer,
+  invisible(.Call(C_gsim_metadata_vcf_start, reader$pointer,
                   as.integer(chromosome_index)))
 }
 
@@ -40,7 +40,7 @@
   if (!inherits(reader, "gsim_vcf_reader") || reader$closed) {
     .gsim_stop("reader is not an open gsim VCF reader.")
   }
-  .Call(C_gsim_gmat_vcf_next, reader$pointer)
+  .Call(C_gsim_metadata_vcf_next, reader$pointer)
 }
 
 .gsim_vcf_align_map <- function(map, variants) {
@@ -165,13 +165,13 @@
     count <- as.integer(block$variant_count)
     rows <- seq.int(first, length.out = count)
     marker_ids <- variants$variant_id[rows]
-    h1 <- .gsim_gbits_zero(backend, length(reader$samples), count,
+    h1 <- .gsim_packed_zero(backend, length(reader$samples), count,
                            reader$samples, marker_ids)
-    h2 <- .gsim_gbits_zero(backend, length(reader$samples), count,
+    h2 <- .gsim_packed_zero(backend, length(reader$samples), count,
                            reader$samples, marker_ids)
     on.exit({
-      try(.gsim_gbits_close(h1), silent = TRUE)
-      try(.gsim_gbits_close(h2), silent = TRUE)
+      try(.gsim_packed_close(h1), silent = TRUE)
+      try(.gsim_packed_close(h2), silent = TRUE)
     }, add = TRUE)
     .gsim_vcf_reader_start(reader, block_index)
     for (local_marker in seq_len(count)) {
@@ -179,7 +179,7 @@
       if (is.null(record) || record$variant_index != rows[[local_marker]]) {
         .gsim_stop("VCF chromosome stream did not preserve marker order.")
       }
-      .gsim_gbits_set_marker(h1, h2, local_marker, record$h1, record$h2)
+      .gsim_packed_set_marker(h1, h2, local_marker, record$h1, record$h2)
     }
     if (!is.null(.gsim_vcf_reader_next(reader))) {
       .gsim_stop("VCF chromosome stream exceeded its declared block.")
@@ -195,10 +195,10 @@
     .gsim_hap_dataset_append(dataset, block$chromosome[[1L]], h1, h2,
                              variant_metadata)
     peak_packed <- max(peak_packed,
-                       .gsim_gbits_info(h1)[["storage_bytes"]] +
-                         .gsim_gbits_info(h2)[["storage_bytes"]])
-    .gsim_gbits_close(h1)
-    .gsim_gbits_close(h2)
+                       .gsim_packed_info(h1)[["storage_bytes"]] +
+                         .gsim_packed_info(h2)[["storage_bytes"]])
+    .gsim_packed_close(h1)
+    .gsim_packed_close(h2)
     h1 <- h2 <- NULL
   }
   manifest <- .gsim_hap_dataset_finalize(dataset)

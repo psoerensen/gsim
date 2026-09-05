@@ -2,12 +2,14 @@
 
 ## Status and provenance
 
-This document freezes the founder-only model implemented by `gsim`.  It is a
-clean native reimplementation of the stochastic model in HAPNEST, inspected at
+This document freezes the founder-only model implemented by `gsim`. It is a
+clean native C++ implementation informed by the stochastic model in the
+[HAPNEST repository](https://github.com/intervene-EU-H2020/synthetic_data), inspected at
 commit [`ba52da1a63cf609306ea92540b3d130fa1efd213`](https://github.com/intervene-EU-H2020/synthetic_data/tree/ba52da1a63cf609306ea92540b3d130fa1efd213),
 and of the model described in Wharrie et al. (2023), Bioinformatics 39:btad535,
 [doi:10.1093/bioinformatics/btad535](https://doi.org/10.1093/bioinformatics/btad535).
-HAPNEST and `gsim` are both GPL-3 licensed.  No HAPNEST source is copied and no
+HAPNEST is [GPL-3 licensed](https://github.com/intervene-EU-H2020/synthetic_data/blob/ba52da1a63cf609306ea92540b3d130fa1efd213/LICENSE),
+and `gsim` is distributed under GPL-3. No HAPNEST source is copied and no
 Julia, Python, HAPNEST, container, downloader, or external process is used at
 runtime.
 
@@ -164,7 +166,7 @@ the native batch boundary is likewise not a biological event.
 The packed HAP-reference integration uses this identical native event loop.
 HAP/BIM/FAM chromosome order and reader batching do not enter the stream key;
 only the exact selected chromosome label does. Loaded H1/H2 donor handles are
-materialized phase-specifically through the existing gbits filtered-copy
+materialized phase-specifically through the private gsim filtered-copy
 primitive without byte-matrix or genotype decoding. See
 `hap_reference_founders.md` for its alignment and lifetime contract.
 
@@ -189,8 +191,9 @@ never imputed in the production generator.
 algorithm.  The focused interface returns R `raw` matrices (one byte per
 allele/count), not dense double matrices and not a new persistent storage
 format.  Reusable bit-packed binary/ternary representation and PLINK coding
-belong to `gbits`; panel identity, map alignment, transformations, and LD
-summaries belong to `gmat`. The internal packed PLINK dataset path now writes
+belong to gsim's private packed backend; panel identity, map alignment,
+transformations, and LD summaries use gsim's private metadata layer. The
+internal packed PLINK dataset path writes
 BED/BIM/FAM without changing this byte oracle or materializing dense dosage
 matrices. Mutation-age filtering
 belongs to the simulation model in `gsim`; mutation-map ingestion,
@@ -205,53 +208,3 @@ meioses between known parents.  A later pedigree milestone must take each
 founder's two already-phased chromosomes and perform new parental meioses on
 chromosome maps while preserving pedigree IDs and parentage.  It must not call
 this founder-copying process to create descendants.
-
-## Proposed pedigree/meiosis milestone
-
-The next milestone should add a separate, explicitly named meiosis layer; it
-must not extend or overload the HAPNEST founder primitive.
-
-1. Read the existing `gsim_pedigree` object in `canonical_order`, without
-   altering `pedigree`, `canonical_order`, `external_order`, `mapping`, or any
-   `gsim_pedigree_records()` contract.  Define pedigree founders as rows with
-   both `sire` and `dam` missing, including later new founders.
-2. Require an explicit one-to-one `founder_map` with columns `animal` and
-   `founder_individual`.  Validate completeness, uniqueness, and exact ID
-   matching before simulation.  Record, for every chromosome, the two source
-   founder haplotypes used by each mapped animal.
-3. For a nonfounder in topological order, form the paternal chromosome by a
-   new biological meiosis between the sire's two phased homologues and form the
-   maternal chromosome independently from the dam's two homologues.  Crossover
-   locations use the chromosome genetic map and reset at every boundary.  RNG
-   streams must be keyed by seed, child ID, parental role, and chromosome so
-   full-sib, paternal-half-sib, and maternal-half-sib families share the
-   appropriate parent but receive independent auditable gametes.
-4. The existing pedigree permits one missing parent.  Such a contribution must
-   never be silently fabricated.  Either the first bounded API rejects partial
-   parentage, or a later extension supplies an explicit `ghost_founder_map`
-   whose generated chromosomes and stable synthetic IDs are recorded while
-   the public pedigree's missing parent remains missing.  This choice must be
-   frozen before implementation.
-5. Emit audit tables for founder mapping and every meiosis: child, parental
-   role, recorded parent ID, chromosome, starting homologue, crossover
-   coordinates, and packed output row.  Family type is derived from the
-   unchanged sire/dam columns, so full- and half-sib relationships remain
-   inspectable.
-6. The experimental chromosome-local path in
-   `packed_chromosome_simulation.md` now hands compact event plans to a
-   `gbits`-owned mutable one-bit handle without materializing generated byte
-   matrices.  It retains two phase matrices with identical animal/variant axes;
-   diploid counts are derived from them and never used to recreate phase.  The
-   raw implementation remains the independent exact oracle.
-7. PLINK output remains downstream.  A future `gbits` writer should encode BED,
-   while `gmat`-owned aligned `MarkerMetadata`/`SampleMetadata` supplies BIM/FAM
-   identity.  FAM paternal ID, maternal ID, and sex must come directly from the
-   unchanged pedigree table (`0` only for missing parents/unknown sex under the
-   chosen PLINK convention), with an exported audit mapping between FAM order,
-   canonical pedigree order, external order, and packed rows.
-
-Before implementing step 3, separately freeze and validate the biological
-meiosis model (crossover-count process, interference assumption, map-unit
-conversion, chromatid starting choice, zero-length intervals, and sex-specific
-maps).  None of those choices can be inferred from the historical HAPNEST
-copying process.

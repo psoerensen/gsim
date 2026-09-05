@@ -10,13 +10,15 @@
 #include <string>
 #include <vector>
 
+#include "standalone_packed_api.h"
+
 namespace {
 
 using status_t = int;
 using handle_t = void;
-struct BedSinkInfo;
-struct HapSinkInfo;
-struct HapChromosomeInfo;
+using BedSinkInfo = gsim::native::api::BedSinkInfo;
+using HapSinkInfo = gsim::native::api::HapSinkInfo;
+using HapChromosomeInfo = gsim::native::api::HapChromosomeInfo;
 
 struct Backend {
     std::uint32_t (*abi_version)();
@@ -84,34 +86,9 @@ struct Packed {
     std::uint64_t markers;
 };
 
-struct BedSinkInfo {
-    std::uint64_t individual_count;
-    std::uint64_t variant_count;
-    std::uint64_t bytes_written;
-    std::uint64_t conversion_buffer_bytes;
-    std::uint64_t lifecycle_object_bytes;
-    int state;
-};
-
 struct BedSink {
     Backend* backend;
     handle_t* handle;
-};
-
-struct HapSinkInfo {
-    std::uint64_t individual_count;
-    std::uint64_t marker_count;
-    std::uint64_t chromosome_count;
-    std::uint64_t bytes_written;
-    int state;
-};
-
-struct HapChromosomeInfo {
-    std::uint64_t global_start_marker;
-    std::uint64_t marker_count;
-    std::uint64_t h1_offset;
-    std::uint64_t h2_offset;
-    std::uint64_t bytes_per_phase;
 };
 
 struct HapSink { Backend* backend; handle_t* handle; };
@@ -125,29 +102,6 @@ struct HapReader {
 
 [[noreturn]] void fail(const std::string& message) {
     throw std::runtime_error(message);
-}
-
-SEXP named_element(SEXP values, const char* name) {
-    if (TYPEOF(values) != VECSXP) fail("gbits symbol table must be a list");
-    SEXP names = Rf_getAttrib(values, R_NamesSymbol);
-    if (TYPEOF(names) != STRSXP || XLENGTH(names) != XLENGTH(values)) {
-        fail("gbits symbol table must be named");
-    }
-    for (R_xlen_t i = 0; i < XLENGTH(values); ++i) {
-        if (std::strcmp(CHAR(STRING_ELT(names, i)), name) == 0) {
-            return VECTOR_ELT(values, i);
-        }
-    }
-    fail(std::string("gbits library is missing required symbol '") + name + "'");
-}
-
-template <typename Function>
-Function symbol(SEXP values, const char* name) {
-    SEXP address = named_element(values, name);
-    if (TYPEOF(address) != EXTPTRSXP || R_ExternalPtrAddr(address) == nullptr) {
-        fail(std::string("gbits symbol '") + name + "' has no callable address");
-    }
-    return reinterpret_cast<Function>(R_ExternalPtrAddr(address));
 }
 
 void backend_finalizer(SEXP pointer) {
@@ -315,91 +269,48 @@ double exact_r_number(std::uint64_t value, const char* field) {
 
 } // namespace
 
-extern "C" SEXP C_gsim_gbits_backend(SEXP symbols) {
+extern "C" SEXP C_gsim_packed_backend() {
     try {
         Backend* backend = new Backend{};
         try {
-            backend->abi_version = symbol<decltype(backend->abi_version)>(
-                symbols, "gbits_abi_version");
-            backend->library_version = symbol<decltype(backend->library_version)>(
-                symbols, "gbits_library_version");
-            backend->last_error = symbol<decltype(backend->last_error)>(
-                symbols, "gbits_last_error");
-            backend->create_zero = symbol<decltype(backend->create_zero)>(
-                symbols, "gbits_phased_haplotype_create_zero");
-            backend->create_values = symbol<decltype(backend->create_values)>(
-                symbols, "gbits_phased_haplotype_create_from_values");
-            backend->close = symbol<decltype(backend->close)>(
-                symbols, "gbits_phased_haplotype_close");
-            backend->individual_count = symbol<decltype(backend->individual_count)>(
-                symbols, "gbits_phased_haplotype_individual_count");
-            backend->marker_count = symbol<decltype(backend->marker_count)>(
-                symbols, "gbits_phased_haplotype_marker_count");
-            backend->words_per_marker = symbol<decltype(backend->words_per_marker)>(
-                symbols, "gbits_phased_haplotype_words_per_marker");
-            backend->storage_bytes = symbol<decltype(backend->storage_bytes)>(
-                symbols, "gbits_phased_haplotype_storage_bytes");
-            backend->word = symbol<decltype(backend->word)>(
-                symbols, "gbits_phased_haplotype_word");
-            backend->allele = symbol<decltype(backend->allele)>(
-                symbols, "gbits_phased_haplotype_allele");
-            backend->set_allele = symbol<decltype(backend->set_allele)>(
-                symbols, "gbits_phased_haplotype_set_allele");
-            backend->unpack = symbol<decltype(backend->unpack)>(
-                symbols, "gbits_phased_haplotype_unpack");
-            backend->copy_interval = symbol<decltype(backend->copy_interval)>(
-                symbols, "gbits_phased_haplotype_copy_interval");
-            backend->copy_filtered = symbol<decltype(backend->copy_filtered)>(
-                symbols, "gbits_phased_haplotype_copy_filtered_segment");
-            backend->make_gamete = symbol<decltype(backend->make_gamete)>(
-                symbols, "gbits_phased_haplotype_make_gamete");
-            backend->decode_genotypes = symbol<decltype(backend->decode_genotypes)>(
-                symbols, "gbits_phased_haplotype_decode_genotypes");
-            backend->bed_open = symbol<decltype(backend->bed_open)>(
-                symbols, "gbits_bed_open");
-            backend->bed_close = symbol<decltype(backend->bed_close)>(
-                symbols, "gbits_bed_close");
-            backend->bed_read_variant = symbol<decltype(backend->bed_read_variant)>(
-                symbols, "gbits_bed_read_variant");
-            backend->bed_sink_create = symbol<decltype(backend->bed_sink_create)>(
-                symbols, "gbits_bed_sink_create");
-            backend->bed_sink_append = symbol<decltype(backend->bed_sink_append)>(
-                symbols, "gbits_bed_sink_append_phased");
-            backend->bed_sink_finalize = symbol<decltype(backend->bed_sink_finalize)>(
-                symbols, "gbits_bed_sink_finalize");
-            backend->bed_sink_info = symbol<decltype(backend->bed_sink_info)>(
-                symbols, "gbits_bed_sink_get_info");
-            backend->bed_sink_close = symbol<decltype(backend->bed_sink_close)>(
-                symbols, "gbits_bed_sink_close");
-            backend->hap_sink_create = symbol<decltype(backend->hap_sink_create)>(
-                symbols, "gbits_hap_sink_create");
-            backend->hap_sink_append = symbol<decltype(backend->hap_sink_append)>(
-                symbols, "gbits_hap_sink_append_phased");
-            backend->hap_sink_finalize = symbol<decltype(backend->hap_sink_finalize)>(
-                symbols, "gbits_hap_sink_finalize");
-            backend->hap_sink_info = symbol<decltype(backend->hap_sink_info)>(
-                symbols, "gbits_hap_sink_get_info");
-            backend->hap_sink_close = symbol<decltype(backend->hap_sink_close)>(
-                symbols, "gbits_hap_sink_close");
-            backend->hap_reader_open = symbol<decltype(backend->hap_reader_open)>(
-                symbols, "gbits_hap_reader_open");
-            backend->hap_reader_close = symbol<decltype(backend->hap_reader_close)>(
-                symbols, "gbits_hap_reader_close");
-            backend->hap_reader_dimensions = symbol<decltype(backend->hap_reader_dimensions)>(
-                symbols, "gbits_hap_reader_dimensions");
-            backend->hap_reader_chromosome_info = symbol<decltype(backend->hap_reader_chromosome_info)>(
-                symbols, "gbits_hap_reader_chromosome_info");
-            backend->hap_reader_load = symbol<decltype(backend->hap_reader_load)>(
-                symbols, "gbits_hap_reader_load_chromosome");
-            const std::uint32_t abi = backend->abi_version();
-            if (abi != 4u) {
-                fail("gbits ABI mismatch: gsim requires ABI 4");
-            }
-            const char* version = backend->library_version();
-            if (version == nullptr || version[0] == '\0') {
-                fail("gbits returned an empty library version");
-            }
-            backend->version = version;
+            namespace api = gsim::native::api;
+            backend->abi_version = api::abi_version;
+            backend->library_version = api::library_version;
+            backend->last_error = api::last_error;
+            backend->create_zero = api::create_zero;
+            backend->create_values = api::create_values;
+            backend->close = api::close;
+            backend->individual_count = api::individual_count;
+            backend->marker_count = api::marker_count;
+            backend->words_per_marker = api::words_per_marker;
+            backend->storage_bytes = api::storage_bytes;
+            backend->word = api::word;
+            backend->allele = api::allele;
+            backend->set_allele = api::set_allele;
+            backend->unpack = api::unpack;
+            backend->copy_interval = api::copy_interval;
+            backend->copy_filtered = api::copy_filtered;
+            backend->make_gamete = api::make_gamete;
+            backend->decode_genotypes = api::decode_genotypes;
+            backend->bed_open = api::bed_open;
+            backend->bed_close = api::bed_close;
+            backend->bed_read_variant = api::bed_read_variant;
+            backend->bed_sink_create = api::bed_sink_create;
+            backend->bed_sink_append = api::bed_sink_append;
+            backend->bed_sink_finalize = api::bed_sink_finalize;
+            backend->bed_sink_info = api::bed_sink_info;
+            backend->bed_sink_close = api::bed_sink_close;
+            backend->hap_sink_create = api::hap_sink_create;
+            backend->hap_sink_append = api::hap_sink_append;
+            backend->hap_sink_finalize = api::hap_sink_finalize;
+            backend->hap_sink_info = api::hap_sink_info;
+            backend->hap_sink_close = api::hap_sink_close;
+            backend->hap_reader_open = api::hap_reader_open;
+            backend->hap_reader_close = api::hap_reader_close;
+            backend->hap_reader_dimensions = api::hap_reader_dimensions;
+            backend->hap_reader_chromosome_info = api::hap_reader_chromosome_info;
+            backend->hap_reader_load = api::hap_reader_load;
+            backend->version = api::library_version();
         } catch (...) {
             delete backend;
             throw;
@@ -408,7 +319,7 @@ extern "C" SEXP C_gsim_gbits_backend(SEXP symbols) {
                                                  R_NilValue));
         R_RegisterCFinalizerEx(pointer, backend_finalizer, TRUE);
         SEXP version = PROTECT(Rf_mkString(backend->version.c_str()));
-        Rf_setAttrib(pointer, Rf_install("gbits_version"), version);
+        Rf_setAttrib(pointer, Rf_install("native_backend_version"), version);
         UNPROTECT(2);
         return pointer;
     } catch (const std::exception& ex) {
@@ -417,7 +328,7 @@ extern "C" SEXP C_gsim_gbits_backend(SEXP symbols) {
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gbits_pack(SEXP backend_pointer, SEXP values) {
+extern "C" SEXP C_gsim_packed_pack(SEXP backend_pointer, SEXP values) {
     try {
         Backend* backend = require_backend(backend_pointer);
         if (TYPEOF(values) != RAWSXP || !Rf_isMatrix(values)) {
@@ -443,7 +354,7 @@ extern "C" SEXP C_gsim_gbits_pack(SEXP backend_pointer, SEXP values) {
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gbits_zero(SEXP backend_pointer, SEXP individuals_sexp,
+extern "C" SEXP C_gsim_packed_zero(SEXP backend_pointer, SEXP individuals_sexp,
                                    SEXP markers_sexp) {
     try {
         Backend* backend = require_backend(backend_pointer);
@@ -463,7 +374,7 @@ extern "C" SEXP C_gsim_gbits_zero(SEXP backend_pointer, SEXP individuals_sexp,
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gbits_set_marker(SEXP h1_pointer, SEXP h2_pointer,
+extern "C" SEXP C_gsim_packed_set_marker(SEXP h1_pointer, SEXP h2_pointer,
                                           SEXP marker_sexp, SEXP h1_values,
                                           SEXP h2_values) {
     try {
@@ -499,7 +410,7 @@ extern "C" SEXP C_gsim_gbits_set_marker(SEXP h1_pointer, SEXP h2_pointer,
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gbits_unpack(SEXP pointer) {
+extern "C" SEXP C_gsim_packed_unpack(SEXP pointer) {
     try {
         Packed* packed = require_packed(pointer);
         if (packed->individuals > static_cast<std::uint64_t>(
@@ -525,7 +436,7 @@ extern "C" SEXP C_gsim_gbits_unpack(SEXP pointer) {
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gbits_info(SEXP pointer) {
+extern "C" SEXP C_gsim_packed_info(SEXP pointer) {
     try {
         Packed* packed = require_packed(pointer);
         std::uint64_t words = 0u;
@@ -551,7 +462,7 @@ extern "C" SEXP C_gsim_gbits_info(SEXP pointer) {
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gbits_close(SEXP pointer) {
+extern "C" SEXP C_gsim_packed_close(SEXP pointer) {
     try {
         Packed* packed = require_packed(pointer);
         Backend* backend = packed->backend;
@@ -567,7 +478,7 @@ extern "C" SEXP C_gsim_gbits_close(SEXP pointer) {
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gbits_word(SEXP pointer, SEXP marker_sexp,
+extern "C" SEXP C_gsim_packed_word(SEXP pointer, SEXP marker_sexp,
                                    SEXP word_sexp) {
     try {
         Packed* packed = require_packed(pointer);
@@ -592,7 +503,7 @@ extern "C" SEXP C_gsim_gbits_word(SEXP pointer, SEXP marker_sexp,
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gbits_copy_interval(
+extern "C" SEXP C_gsim_packed_copy_interval(
     SEXP destination_pointer, SEXP destination_individual_sexp,
     SEXP source_pointer, SEXP source_individual_sexp,
     SEXP first_marker_sexp, SEXP last_marker_sexp) {
@@ -620,7 +531,7 @@ extern "C" SEXP C_gsim_gbits_copy_interval(
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gbits_copy_filtered(
+extern "C" SEXP C_gsim_packed_copy_filtered(
     SEXP destination_pointer, SEXP destination_individual_sexp,
     SEXP source_pointer, SEXP source_individual_sexp,
     SEXP first_marker_sexp, SEXP last_marker_sexp, SEXP age_sexp,
@@ -655,7 +566,7 @@ extern "C" SEXP C_gsim_gbits_copy_filtered(
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gbits_copy_filtered_counts(
+extern "C" SEXP C_gsim_packed_copy_filtered_counts(
     SEXP destination_pointer, SEXP destination_individual_sexp,
     SEXP source_pointer, SEXP source_individual_sexp,
     SEXP first_marker_sexp, SEXP last_marker_sexp, SEXP age_sexp,
@@ -712,7 +623,7 @@ extern "C" SEXP C_gsim_gbits_copy_filtered_counts(
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gbits_make_gamete(
+extern "C" SEXP C_gsim_packed_make_gamete(
     SEXP destination_pointer, SEXP destination_individual_sexp,
     SEXP parent_h1_pointer, SEXP parent_h2_pointer,
     SEXP parent_individual_sexp, SEXP starting_haplotype_sexp,
@@ -758,7 +669,7 @@ extern "C" SEXP C_gsim_gbits_make_gamete(
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gbits_decode_genotypes(SEXP h1_pointer,
+extern "C" SEXP C_gsim_packed_decode_genotypes(SEXP h1_pointer,
                                                SEXP h2_pointer) {
     try {
         Packed* h1 = require_packed(h1_pointer);
@@ -787,7 +698,7 @@ extern "C" SEXP C_gsim_gbits_decode_genotypes(SEXP h1_pointer,
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gbits_bed_sink_create(
+extern "C" SEXP C_gsim_packed_bed_sink_create(
     SEXP backend_pointer, SEXP path_sexp, SEXP individuals_sexp,
     SEXP overwrite_sexp, SEXP buffer_variants_sexp) {
     try {
@@ -822,7 +733,7 @@ extern "C" SEXP C_gsim_gbits_bed_sink_create(
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gbits_bed_sink_append(
+extern "C" SEXP C_gsim_packed_bed_sink_append(
     SEXP sink_pointer, SEXP h1_pointer, SEXP h2_pointer) {
     try {
         BedSink* sink = require_bed_sink(sink_pointer);
@@ -842,7 +753,7 @@ extern "C" SEXP C_gsim_gbits_bed_sink_append(
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gbits_bed_sink_finalize(SEXP sink_pointer) {
+extern "C" SEXP C_gsim_packed_bed_sink_finalize(SEXP sink_pointer) {
     try {
         BedSink* sink = require_bed_sink(sink_pointer);
         check(sink->backend, sink->backend->bed_sink_finalize(sink->handle),
@@ -854,7 +765,7 @@ extern "C" SEXP C_gsim_gbits_bed_sink_finalize(SEXP sink_pointer) {
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gbits_bed_sink_cancel(SEXP sink_pointer) {
+extern "C" SEXP C_gsim_packed_bed_sink_cancel(SEXP sink_pointer) {
     try {
         BedSink* sink = require_bed_sink(sink_pointer);
         check(sink->backend, sink->backend->bed_sink_close(sink->handle),
@@ -867,7 +778,7 @@ extern "C" SEXP C_gsim_gbits_bed_sink_cancel(SEXP sink_pointer) {
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gbits_bed_sink_info(SEXP sink_pointer) {
+extern "C" SEXP C_gsim_packed_bed_sink_info(SEXP sink_pointer) {
     try {
         BedSink* sink = require_bed_sink(sink_pointer);
         BedSinkInfo info{};
@@ -896,7 +807,7 @@ extern "C" SEXP C_gsim_gbits_bed_sink_info(SEXP sink_pointer) {
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gbits_hap_sink_create(
+extern "C" SEXP C_gsim_packed_hap_sink_create(
     SEXP backend_pointer, SEXP path_sexp, SEXP individuals_sexp,
     SEXP overwrite_sexp) {
     try {
@@ -921,7 +832,7 @@ extern "C" SEXP C_gsim_gbits_hap_sink_create(
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gbits_hap_sink_append(
+extern "C" SEXP C_gsim_packed_hap_sink_append(
     SEXP sink_pointer, SEXP h1_pointer, SEXP h2_pointer) {
     try {
         HapSink* sink = require_hap_sink(sink_pointer);
@@ -939,7 +850,7 @@ extern "C" SEXP C_gsim_gbits_hap_sink_append(
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gbits_hap_sink_finalize(SEXP sink_pointer) {
+extern "C" SEXP C_gsim_packed_hap_sink_finalize(SEXP sink_pointer) {
     try {
         HapSink* sink = require_hap_sink(sink_pointer);
         check(sink->backend, sink->backend->hap_sink_finalize(sink->handle),
@@ -951,7 +862,7 @@ extern "C" SEXP C_gsim_gbits_hap_sink_finalize(SEXP sink_pointer) {
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gbits_hap_sink_cancel(SEXP sink_pointer) {
+extern "C" SEXP C_gsim_packed_hap_sink_cancel(SEXP sink_pointer) {
     try {
         HapSink* sink = require_hap_sink(sink_pointer);
         check(sink->backend, sink->backend->hap_sink_close(sink->handle),
@@ -964,7 +875,7 @@ extern "C" SEXP C_gsim_gbits_hap_sink_cancel(SEXP sink_pointer) {
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gbits_hap_sink_info(SEXP sink_pointer) {
+extern "C" SEXP C_gsim_packed_hap_sink_info(SEXP sink_pointer) {
     try {
         HapSink* sink = require_hap_sink(sink_pointer);
         HapSinkInfo info{};
@@ -989,7 +900,7 @@ extern "C" SEXP C_gsim_gbits_hap_sink_info(SEXP sink_pointer) {
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gbits_hap_reader_open(
+extern "C" SEXP C_gsim_packed_hap_reader_open(
     SEXP backend_pointer, SEXP path_sexp) {
     try {
         Backend* backend = require_backend(backend_pointer);
@@ -1016,7 +927,7 @@ extern "C" SEXP C_gsim_gbits_hap_reader_open(
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gbits_hap_reader_close(SEXP reader_pointer) {
+extern "C" SEXP C_gsim_packed_hap_reader_close(SEXP reader_pointer) {
     try {
         HapReader* reader = require_hap_reader(reader_pointer);
         check(reader->backend, reader->backend->hap_reader_close(reader->handle),
@@ -1029,7 +940,7 @@ extern "C" SEXP C_gsim_gbits_hap_reader_close(SEXP reader_pointer) {
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gbits_hap_reader_info(SEXP reader_pointer) {
+extern "C" SEXP C_gsim_packed_hap_reader_info(SEXP reader_pointer) {
     try {
         HapReader* reader = require_hap_reader(reader_pointer);
         if (reader->chromosomes > static_cast<std::uint64_t>(
@@ -1069,7 +980,7 @@ extern "C" SEXP C_gsim_gbits_hap_reader_info(SEXP reader_pointer) {
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gbits_hap_reader_load(
+extern "C" SEXP C_gsim_packed_hap_reader_load(
     SEXP reader_pointer, SEXP chromosome_sexp) {
     try {
         HapReader* reader = require_hap_reader(reader_pointer);
@@ -1103,7 +1014,7 @@ extern "C" SEXP C_gsim_gbits_hap_reader_load(
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gbits_bed_read_all(
+extern "C" SEXP C_gsim_packed_bed_read_all(
     SEXP backend_pointer, SEXP path_sexp, SEXP individuals_sexp,
     SEXP variants_sexp) {
     try {

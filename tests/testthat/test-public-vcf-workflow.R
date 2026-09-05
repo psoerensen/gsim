@@ -74,8 +74,8 @@ testthat::test_that("public VCF to founder, pedigree, HAP, and BED is exact", {
   testthat::expect_identical(hap$variant_ids, reference$variant_ids)
   testthat::expect_identical(bed$variant_ids, reference$variant_ids)
 
-  gbits <- gsim:::.gsim_gbits_backend()
-  gmat <- gsim:::.gsim_gmat_backend()
+  gbits <- gsim:::.gsim_packed_backend()
+  gmat <- gsim:::.gsim_metadata_backend()
   output <- gsim:::.gsim_hap_dataset_open(
     gbits, gmat, file.path(root, "simulation-hap"))
   reference_reader <- gsim:::.gsim_hap_dataset_open(
@@ -84,8 +84,8 @@ testthat::test_that("public VCF to founder, pedigree, HAP, and BED is exact", {
   for (chromosome in c("B", "A")) {
     rows <- which(reference_reader$variants$chromosome == chromosome)
     input <- gsim:::.gsim_hap_dataset_load_chromosome(reference_reader, chromosome)
-    raw_h1 <- gsim:::.gsim_gbits_unpack(input$h1)
-    raw_h2 <- gsim:::.gsim_gbits_unpack(input$h2)
+    raw_h1 <- gsim:::.gsim_packed_unpack(input$h1)
+    raw_h2 <- gsim:::.gsim_packed_unpack(input$h2)
     founder <- gsim:::.gsim_hapnest_founders(
       raw_h1, raw_h2, unname(populations), c(P1 = 0.4, P2 = 0.6),
       c(P1 = 2, P2 = 2), c(P1 = 4, P2 = 6), c(P1 = 0.02, P2 = 0.03),
@@ -99,8 +99,8 @@ testthat::test_that("public VCF to founder, pedigree, HAP, and BED is exact", {
       reference_reader$variants$genetic_position_cm[rows] / 100, 717,
       return_crossovers = FALSE)
     actual <- gsim:::.gsim_hap_dataset_load_chromosome(output, chromosome)
-    actual_h1 <- gsim:::.gsim_gbits_unpack(actual$h1)
-    actual_h2 <- gsim:::.gsim_gbits_unpack(actual$h2)
+    actual_h1 <- gsim:::.gsim_packed_unpack(actual$h1)
+    actual_h2 <- gsim:::.gsim_packed_unpack(actual$h2)
     testthat::expect_identical(actual_h1, expected$h1)
     testthat::expect_identical(actual_h2, expected$h2)
     expected_genotypes[[chromosome]] <- expected$genotypes
@@ -112,10 +112,10 @@ testthat::test_that("public VCF to founder, pedigree, HAP, and BED is exact", {
       testthat::expect_true(all(actual_h2[i, ] == actual_h1[dam, ] |
                                   actual_h2[i, ] == actual_h2[dam, ]))
     }
-    gsim:::.gsim_gbits_close(input$h1); gsim:::.gsim_gbits_close(input$h2)
-    gsim:::.gsim_gbits_close(actual$h1); gsim:::.gsim_gbits_close(actual$h2)
+    gsim:::.gsim_packed_close(input$h1); gsim:::.gsim_packed_close(input$h2)
+    gsim:::.gsim_packed_close(actual$h1); gsim:::.gsim_packed_close(actual$h2)
   }
-  decoded <- gsim:::.gsim_gbits_bed_read_all(
+  decoded <- gsim:::.gsim_packed_bed_read_all(
     gbits, bed$paths[["bed"]], length(pedigree$canonical_order),
     length(reference$variant_ids))
   expected_all <- do.call(cbind, expected_genotypes[c("B", "A")])
@@ -136,14 +136,14 @@ testthat::test_that("public VCF to founder, pedigree, HAP, and BED is exact", {
     forward_phase <- gsim:::.gsim_hap_dataset_load_chromosome(output, chromosome)
     reverse_phase <- gsim:::.gsim_hap_dataset_load_chromosome(reverse_reader,
                                                                chromosome)
-    testthat::expect_identical(gsim:::.gsim_gbits_unpack(forward_phase$h1),
-                               gsim:::.gsim_gbits_unpack(reverse_phase$h1))
-    testthat::expect_identical(gsim:::.gsim_gbits_unpack(forward_phase$h2),
-                               gsim:::.gsim_gbits_unpack(reverse_phase$h2))
-    gsim:::.gsim_gbits_close(forward_phase$h1)
-    gsim:::.gsim_gbits_close(forward_phase$h2)
-    gsim:::.gsim_gbits_close(reverse_phase$h1)
-    gsim:::.gsim_gbits_close(reverse_phase$h2)
+    testthat::expect_identical(gsim:::.gsim_packed_unpack(forward_phase$h1),
+                               gsim:::.gsim_packed_unpack(reverse_phase$h1))
+    testthat::expect_identical(gsim:::.gsim_packed_unpack(forward_phase$h2),
+                               gsim:::.gsim_packed_unpack(reverse_phase$h2))
+    gsim:::.gsim_packed_close(forward_phase$h1)
+    gsim:::.gsim_packed_close(forward_phase$h2)
+    gsim:::.gsim_packed_close(reverse_phase$h1)
+    gsim:::.gsim_packed_close(reverse_phase$h2)
   }
   gsim:::.gsim_hap_dataset_close(reverse_reader)
 
@@ -160,14 +160,14 @@ testthat::test_that("public VCF to founder, pedigree, HAP, and BED is exact", {
     gbits, gmat, file.path(root, "simulation-single"))
   collection_b <- gsim:::.gsim_hap_dataset_load_chromosome(output, "B")
   standalone_b <- gsim:::.gsim_hap_dataset_load_chromosome(single_reader, "B")
-  testthat::expect_identical(gsim:::.gsim_gbits_unpack(collection_b$h1),
-                             gsim:::.gsim_gbits_unpack(standalone_b$h1))
-  testthat::expect_identical(gsim:::.gsim_gbits_unpack(collection_b$h2),
-                             gsim:::.gsim_gbits_unpack(standalone_b$h2))
-  gsim:::.gsim_gbits_close(collection_b$h1)
-  gsim:::.gsim_gbits_close(collection_b$h2)
-  gsim:::.gsim_gbits_close(standalone_b$h1)
-  gsim:::.gsim_gbits_close(standalone_b$h2)
+  testthat::expect_identical(gsim:::.gsim_packed_unpack(collection_b$h1),
+                             gsim:::.gsim_packed_unpack(standalone_b$h1))
+  testthat::expect_identical(gsim:::.gsim_packed_unpack(collection_b$h2),
+                             gsim:::.gsim_packed_unpack(standalone_b$h2))
+  gsim:::.gsim_packed_close(collection_b$h1)
+  gsim:::.gsim_packed_close(collection_b$h2)
+  gsim:::.gsim_packed_close(standalone_b$h1)
+  gsim:::.gsim_packed_close(standalone_b$h2)
   gsim:::.gsim_hap_dataset_close(single_reader)
   gsim:::.gsim_hap_dataset_close(output)
   gsim:::.gsim_hap_dataset_close(reference_reader)

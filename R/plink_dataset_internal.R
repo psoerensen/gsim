@@ -1,49 +1,9 @@
-# Experimental BED/BIM/FAM dataset orchestration. gbits owns BED coding, gmat
-# owns validated metadata serialization, and gsim owns aligned publication.
-
-.gsim_gmat_symbols <- c(
-  "gmat_abi_version", "gmat_library_version", "gmat_last_error",
-  "gmat_variant_metadata_create", "gmat_variant_metadata_close",
-  "gmat_variant_metadata_write_bim", "gmat_variant_metadata_read_bim",
-  "gmat_variant_metadata_count", "gmat_variant_metadata_get",
-  "gmat_sample_metadata_create", "gmat_sample_metadata_close",
-  "gmat_sample_metadata_write_fam", "gmat_sample_metadata_read_fam",
-  "gmat_sample_metadata_count", "gmat_sample_metadata_get",
-  "gmat_phased_vcf_reader_open", "gmat_phased_vcf_reader_close",
-  "gmat_phased_vcf_reader_dimensions", "gmat_phased_vcf_reader_sample",
-  "gmat_phased_vcf_reader_variant", "gmat_phased_vcf_reader_chromosome",
-  "gmat_phased_vcf_reader_start_chromosome", "gmat_phased_vcf_reader_next"
-)
-
-.gsim_gmat_backend <- function(
-  library = Sys.getenv("GSIM_GMAT_LIBRARY", unset = "")
-) {
-  if (!is.character(library) || length(library) != 1L || is.na(library) ||
-      !nzchar(library)) {
-    .gsim_stop(
-      "A gmat shared-library path is required via library or GSIM_GMAT_LIBRARY."
-    )
-  }
-  path <- normalizePath(library, winslash = "/", mustWork = TRUE)
-  dll <- tryCatch(
-    dyn.load(path, local = TRUE, now = TRUE),
-    error = function(error) .gsim_stop(
-      "Unable to load gmat: ", conditionMessage(error)
-    )
-  )
-  addresses <- tryCatch(
-    stats::setNames(lapply(.gsim_gmat_symbols, function(name) {
-      getNativeSymbolInfo(name, PACKAGE = dll)$address
-    }), .gsim_gmat_symbols),
-    error = function(error) .gsim_stop(
-      "Incompatible gmat library: ", conditionMessage(error)
-    )
-  )
-  pointer <- .Call(C_gsim_gmat_backend, addresses)
-  attr(pointer, "library") <- path
-  attr(pointer, "dll") <- dll
-  attr(pointer, "gmat_abi") <- 0L
-  class(pointer) <- "gsim_gmat_backend"
+# Private metadata/VCF backend compiled into gsim.
+.gsim_metadata_backend <- function() {
+  pointer <- .Call(C_gsim_metadata_backend)
+  attr(pointer, "metadata_origin") <- "internalized contract from gmat 0.4.0 (33d6751)"
+  attr(pointer, "metadata_abi") <- NA_integer_
+  class(pointer) <- "gsim_metadata_backend"
   pointer
 }
 
@@ -90,8 +50,8 @@
 }
 
 .gsim_plink_validate_samples <- function(metadata_backend, metadata) {
-  if (!inherits(metadata_backend, "gsim_gmat_backend")) {
-    .gsim_stop("metadata_backend must be created by .gsim_gmat_backend().")
+  if (!inherits(metadata_backend, "gsim_metadata_backend")) {
+    .gsim_stop("metadata_backend must be created by .gsim_metadata_backend().")
   }
   if (!is.data.frame(metadata)) {
     .gsim_stop("sample_metadata must be a data frame.")
@@ -132,7 +92,7 @@
     stringsAsFactors = FALSE
   )
   pointer <- .Call(
-    C_gsim_gmat_sample_create, metadata_backend, normalized$family_id,
+    C_gsim_metadata_sample_create, metadata_backend, normalized$family_id,
     normalized$individual_id, normalized$paternal_id,
     normalized$maternal_id, normalized$sex
   )
@@ -193,9 +153,9 @@
   )
 }
 
-.gsim_gmat_variant_pointer <- function(metadata_backend, metadata) {
+.gsim_metadata_variant_pointer <- function(metadata_backend, metadata) {
   .Call(
-    C_gsim_gmat_variant_create, metadata_backend, metadata$chromosome,
+    C_gsim_metadata_variant_create, metadata_backend, metadata$chromosome,
     metadata$variant_id, metadata$genetic_position_cm,
     metadata$base_pair_position, metadata$alt, metadata$ref
   )
@@ -290,8 +250,8 @@
   buffer_variants = 64L,
   provenance = list()
 ) {
-  if (!inherits(backend, "gsim_gbits_backend")) {
-    .gsim_stop("backend must be created by .gsim_gbits_backend().")
+  if (!inherits(backend, "gsim_packed_backend")) {
+    .gsim_stop("backend must be created by .gsim_packed_backend().")
   }
   validated_samples <- .gsim_plink_validate_samples(
     metadata_backend, sample_metadata
@@ -351,7 +311,7 @@
     .gsim_stop("Variant metadata order must exactly match packed H1/H2 IDs.")
   }
   # Validate the chromosome metadata before any BED record is appended.
-  invisible(.gsim_gmat_variant_pointer(dataset$metadata_backend, metadata))
+  invisible(.gsim_metadata_variant_pointer(dataset$metadata_backend, metadata))
   .gsim_bed_sink_append(
     dataset$bed, chromosome, h1, h2, metadata$variant_id
   )
@@ -391,7 +351,7 @@
 
   variants <- do.call(rbind, dataset$variant_metadata)
   rownames(variants) <- NULL
-  variant_pointer <- .gsim_gmat_variant_pointer(
+  variant_pointer <- .gsim_metadata_variant_pointer(
     dataset$metadata_backend, variants
   )
   bed_manifest <- .gsim_bed_sink_finalize(dataset$bed)
@@ -399,13 +359,13 @@
     .gsim_stop("injected failure after BED completion")
   }
   bim_info <- .Call(
-    C_gsim_gmat_write_bim, variant_pointer, enc2utf8(dataset$staged[["bim"]])
+    C_gsim_metadata_write_bim, variant_pointer, enc2utf8(dataset$staged[["bim"]])
   )
   if (.test_fail_stage == "after_bim") {
     .gsim_stop("injected failure after BIM completion")
   }
   fam_info <- .Call(
-    C_gsim_gmat_write_fam, dataset$sample_pointer,
+    C_gsim_metadata_write_fam, dataset$sample_pointer,
     enc2utf8(dataset$staged[["fam"]])
   )
 
@@ -449,12 +409,10 @@
     sample_ids = dataset$sample_metadata$individual_id,
     variant_ids = variants$variant_id,
     allele_orientation = "bit 1 = ALT = BIM A1; bit 0 = REF = BIM A2",
-    backend = list(
-      gbits = list(version = attr(dataset$backend, "gbits_version", exact = TRUE),
-                   abi = attr(dataset$backend, "gbits_abi", exact = TRUE)),
-      gmat = list(version = attr(dataset$metadata_backend, "gmat_version",
-                                 exact = TRUE),
-                  abi = attr(dataset$metadata_backend, "gmat_abi", exact = TRUE))
+    implementation = list(
+      engine = "gsim private native backend",
+      packed_origin = attr(dataset$backend, "packed_origin", exact = TRUE),
+      metadata_origin = attr(dataset$metadata_backend, "metadata_origin", exact = TRUE)
     ),
     provenance = dataset$provenance,
     publication_status = "published",

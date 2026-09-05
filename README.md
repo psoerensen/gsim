@@ -16,6 +16,27 @@ marker effects and states, causal markers, probability surfaces, targets,
 realized quantities, and settings/provenance used to generate the data. These
 outputs are intended to make validation studies directly auditable.
 
+## Installation
+
+Install the current release directly from GitHub with `remotes`:
+
+```r
+remotes::install_github("psoerensen/gsim")
+```
+
+`remotes` is used only as an installation helper and is not a `gsim` package
+dependency. From a local checkout, the equivalent base-R command is:
+
+```text
+R CMD INSTALL --preclean .
+```
+
+For RStudio development, open `gsim.Rproj` and use **Build > Install** (or the
+Install button in the Build pane). The project is configured as an R package
+project and invokes base `R CMD INSTALL --preclean`; it does not require
+`devtools`, add RStudio as a package dependency, or include RStudio's
+`.Rproj.user` state in Git or built source packages.
+
 ## Examples
 
 Simulate genotypes and a phenotype:
@@ -55,9 +76,10 @@ result <- gsim_simulate(
 )
 ```
 
-The optional native `gbits` and `gmat` libraries are located through
-`GSIM_GBITS_LIBRARY` and `GSIM_GMAT_LIBRARY`. VCF REF is bit 0/BIM A2, ALT is
-bit 1/BIM A1, and phased GT left/right order is retained as H1/H2. The importer
+All packed storage, VCF parsing, and dataset writing code is compiled directly
+into `gsim`; no sibling packages, shared-library paths, or environment variables
+are required. VCF REF is bit 0/BIM A2, ALT is bit 1/BIM A1, and phased GT
+left/right order is retained as H1/H2. The importer
 accepts only uncompressed VCF, complete phased diploid GT, and uppercase
 biallelic A/C/G/T SNPs. The required map supplies exact cumulative cM values;
 there is no interpolation. Each chromosome is loaded, simulated, written, and

@@ -1,9 +1,9 @@
 .ds_backend <- function() {
-  gsim:::.gsim_gbits_backend(Sys.getenv("GSIM_GBITS_LIBRARY"))
+  gsim:::.gsim_packed_backend()
 }
 
 .ds_metadata_backend <- function() {
-  gsim:::.gsim_gmat_backend(Sys.getenv("GSIM_GMAT_LIBRARY"))
+  gsim:::.gsim_metadata_backend()
 }
 
 .ds_variants <- function(ids, chromosome = "chrZ", cm = seq_along(ids) - 1,
@@ -18,13 +18,13 @@
 }
 
 .ds_packed <- function(backend, h1, h2) {
-  list(h1 = gsim:::.gsim_gbits_pack(backend, h1),
-       h2 = gsim:::.gsim_gbits_pack(backend, h2))
+  list(h1 = gsim:::.gsim_packed_pack(backend, h1),
+       h2 = gsim:::.gsim_packed_pack(backend, h2))
 }
 
 .ds_owned_files <- function(directory) {
   list.files(directory, all.files = TRUE,
-             pattern = "gsim-stage|gbits\\.tmp|gmat\\.tmp|\\.backup",
+             pattern = "gsim-stage|gsim\\.tmp|gsim\\.tmp|\\.backup",
              full.names = TRUE)
 }
 
@@ -135,17 +135,17 @@ testthat::test_that("dataset freezes exact BED, BIM, FAM, and allele bytes", {
       "F\tC\tS\tD\t0\t-9\n", "F\tL\t0\t0\t0\t-9\n"
     ))
   )
-  decoded <- gsim:::.gsim_gbits_bed_read_all(
+  decoded <- gsim:::.gsim_packed_bed_read_all(
     backend, manifest$paths[["bed"]], 4L, 1L, ids, "v1"
   )
   testthat::expect_identical(decoded, matrix(c(0L, 1L, 1L, 2L), 4L, 1L,
                                              dimnames = list(ids, "v1")))
   testthat::expect_identical(manifest$allele_orientation,
     "bit 1 = ALT = BIM A1; bit 0 = REF = BIM A2")
-  testthat::expect_identical(manifest$backend$gbits,
-                             list(version = "0.20.0", abi = 4L))
-  testthat::expect_identical(manifest$backend$gmat,
-                             list(version = "0.4.0", abi = 0L))
+  testthat::expect_identical(manifest$implementation$engine,
+                             "gsim private native backend")
+  testthat::expect_match(manifest$implementation$packed_origin, "089bf1e")
+  testthat::expect_match(manifest$implementation$metadata_origin, "33d6751")
   testthat::expect_identical(manifest$publication_status, "published")
 })
 
@@ -237,8 +237,8 @@ testthat::test_that("FAM validation preserves pedigree roles and rejects ambigui
   permuted <- valid[c(2L, 1L, 3:8), , drop = FALSE]
   dataset <- make(permuted, "permuted")
   testthat::expect_error(gsim:::.gsim_plink_dataset_append(
-    dataset, "x", gsim:::.gsim_gbits_pack(backend, h),
-    gsim:::.gsim_gbits_pack(backend, h), .ds_variants("v", "x")
+    dataset, "x", gsim:::.gsim_packed_pack(backend, h),
+    gsim:::.gsim_packed_pack(backend, h), .ds_variants("v", "x")
   ), "sample order")
   gsim:::.gsim_plink_dataset_cancel(dataset)
 })
@@ -290,7 +290,7 @@ testthat::test_that("multi-chromosome BIM and BED order are literal and exact", 
     gc(FALSE)
   }
   manifest <- gsim:::.gsim_plink_dataset_finalize(dataset)
-  decoded <- gsim:::.gsim_gbits_bed_read_all(
+  decoded <- gsim:::.gsim_packed_bed_read_all(
     backend, manifest$paths[["bed"]], length(ids), sum(marker_counts), ids,
     manifest$variant_ids
   )
@@ -416,7 +416,7 @@ testthat::test_that("founder and multigeneration datasets decode to both oracles
                  seq_along(founder$packed$variant_ids))
   )
   founder_manifest <- gsim:::.gsim_plink_dataset_finalize(founder_data)
-  founder_decoded <- gsim:::.gsim_gbits_bed_read_all(
+  founder_decoded <- gsim:::.gsim_packed_bed_read_all(
     backend, founder_manifest$paths[["bed"]],
     length(founder$packed$sample_ids), length(founder$packed$variant_ids),
     founder_manifest$sample_ids, founder_manifest$variant_ids
@@ -425,7 +425,7 @@ testthat::test_that("founder and multigeneration datasets decode to both oracles
     matrix(as.integer(founder$raw$genotypes), nrow(founder$raw$genotypes),
            dimnames = dimnames(founder$raw$genotypes)))
   testthat::expect_identical(founder_decoded,
-    matrix(as.integer(gsim:::.gsim_gbits_decode_genotypes(
+    matrix(as.integer(gsim:::.gsim_packed_decode_genotypes(
       founder$packed$h1, founder$packed$h2)), nrow(founder_decoded),
       dimnames = dimnames(founder_decoded)))
 
@@ -446,7 +446,7 @@ testthat::test_that("founder and multigeneration datasets decode to both oracles
                  seq_along(pedigree$packed$variant_ids))
   )
   pedigree_manifest <- gsim:::.gsim_plink_dataset_finalize(pedigree_data)
-  decoded <- gsim:::.gsim_gbits_bed_read_all(
+  decoded <- gsim:::.gsim_packed_bed_read_all(
     backend, pedigree_manifest$paths[["bed"]],
     length(pedigree$packed$sample_ids), length(pedigree$packed$variant_ids),
     pedigree_manifest$sample_ids, pedigree_manifest$variant_ids
@@ -456,7 +456,7 @@ testthat::test_that("founder and multigeneration datasets decode to both oracles
                      dimnames = dimnames(pedigree$raw$genotypes))
   testthat::expect_identical(decoded, expected)
   testthat::expect_identical(decoded,
-    matrix(as.integer(gsim:::.gsim_gbits_decode_genotypes(
+    matrix(as.integer(gsim:::.gsim_packed_decode_genotypes(
       pedigree$packed$h1, pedigree$packed$h2)), nrow(decoded),
       dimnames = dimnames(decoded)))
   testthat::expect_identical(sum(decoded == -9L), 0L)
@@ -507,8 +507,8 @@ testthat::test_that("dataset memory accounting remains chromosome-wise", {
     h2 <- matrix(as.raw(rep(c(1, 0, 0), length.out = individuals * markers[[block]])),
                  individuals, markers[[block]], dimnames = list(ids, variants))
     packed <- .ds_packed(backend, h1, h2)
-    packed_bytes <- unname(gsim:::.gsim_gbits_info(packed$h1)[[4L]] +
-                               gsim:::.gsim_gbits_info(packed$h2)[[4L]])
+    packed_bytes <- unname(gsim:::.gsim_packed_info(packed$h1)[[4L]] +
+                               gsim:::.gsim_packed_info(packed$h2)[[4L]])
     peak_packed <- max(peak_packed, packed_bytes)
     gsim:::.gsim_plink_dataset_append(
       dataset, paste0("c", block), packed$h1, packed$h2,

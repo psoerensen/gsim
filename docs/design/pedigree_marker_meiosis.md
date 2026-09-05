@@ -118,9 +118,9 @@ against hand-calculated gametes.
 
 This deterministic simulation primitive and its internal R interface belong in
 `gsim`.  Its raw byte matrices are a small-data oracle and are not bit-packed.
-The experimental chromosome-local production path now delegates bit-packed
-haplotype storage and materialization to `gbits`, as specified in
+The chromosome-local production path uses gsim's private bit-packed haplotype
+storage and materialization, as specified in
 `packed_chromosome_simulation.md`.  The byte implementation here remains the
-independent exact oracle.  Persistent aligned variant, genetic-map, and panel
-metadata belongs in `gmat`; the internal packed PLINK dataset layer composes
-that metadata with the existing `gbits` BED sink.
+independent exact oracle. Aligned variant, genetic-map, and panel metadata use
+gsim's private metadata layer; the internal packed PLINK dataset layer composes
+that metadata with the private BED sink.

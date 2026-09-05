@@ -1,9 +1,9 @@
 .hap_backend <- function() {
-  gsim:::.gsim_gbits_backend(Sys.getenv("GSIM_GBITS_LIBRARY"))
+  gsim:::.gsim_packed_backend()
 }
 
 .hap_metadata_backend <- function() {
-  gsim:::.gsim_gmat_backend(Sys.getenv("GSIM_GMAT_LIBRARY"))
+  gsim:::.gsim_metadata_backend()
 }
 
 .hap_variants <- function(chromosome, ids, offset = 0L) {
@@ -21,8 +21,8 @@
 }
 
 .hap_pack_pair <- function(backend, h1, h2) {
-  list(h1 = gsim:::.gsim_gbits_pack(backend, h1),
-       h2 = gsim:::.gsim_gbits_pack(backend, h2))
+  list(h1 = gsim:::.gsim_packed_pack(backend, h1),
+       h2 = gsim:::.gsim_packed_pack(backend, h2))
 }
 
 .hap_mendelian_errors <- function(h1, h2, alignment) {
@@ -78,10 +78,10 @@ testthat::test_that("HAP v1 writes exact header, ranges, and packed round trips"
   testthat::expect_equal(manifest$header_bytes, 64)
   testthat::expect_equal(manifest$chromosome_table_bytes, 144)
   testthat::expect_equal(manifest$packed_data_bytes, expected_payload)
-  testthat::expect_identical(manifest$backend$gbits,
-                             list(version = "0.20.0", abi = 4L))
-  testthat::expect_identical(manifest$backend$gmat,
-                             list(version = "0.4.0", abi = 0L))
+  testthat::expect_identical(manifest$implementation$engine,
+                             "gsim private native backend")
+  testthat::expect_match(manifest$implementation$packed_origin, "089bf1e")
+  testthat::expect_match(manifest$implementation$metadata_origin, "33d6751")
 
   reader <- gsim:::.gsim_hap_dataset_open(
     backend, metadata_backend, file.path(root, "dÃ¦ta set"))
@@ -91,26 +91,26 @@ testthat::test_that("HAP v1 writes exact header, ranges, and packed round trips"
   for (label in rev(names(chromosomes))) {
     loaded <- gsim:::.gsim_hap_dataset_load_chromosome(reader, label)
     testthat::expect_identical(
-      gsim:::.gsim_gbits_unpack(loaded$h1),
-      gsim:::.gsim_gbits_unpack(pairs[[label]]$h1))
+      gsim:::.gsim_packed_unpack(loaded$h1),
+      gsim:::.gsim_packed_unpack(pairs[[label]]$h1))
     testthat::expect_identical(
-      gsim:::.gsim_gbits_unpack(loaded$h2),
-      gsim:::.gsim_gbits_unpack(pairs[[label]]$h2))
-    info_loaded <- gsim:::.gsim_gbits_info(loaded$h1)
-    info_original <- gsim:::.gsim_gbits_info(pairs[[label]]$h1)
+      gsim:::.gsim_packed_unpack(loaded$h2),
+      gsim:::.gsim_packed_unpack(pairs[[label]]$h2))
+    info_loaded <- gsim:::.gsim_packed_info(loaded$h1)
+    info_original <- gsim:::.gsim_packed_info(pairs[[label]]$h1)
     for (marker in seq_len(chromosomes[[label]])) {
       for (word in seq_len(info_loaded[[3L]])) {
         testthat::expect_identical(
-          gsim:::.gsim_gbits_word(loaded$h1, marker, word),
-          gsim:::.gsim_gbits_word(pairs[[label]]$h1, marker, word))
+          gsim:::.gsim_packed_word(loaded$h1, marker, word),
+          gsim:::.gsim_packed_word(pairs[[label]]$h1, marker, word))
       }
     }
     testthat::expect_identical(info_loaded, info_original)
   }
   retained <- gsim:::.gsim_hap_dataset_load_chromosome(reader, "01")
   gsim:::.gsim_hap_dataset_close(reader)
-  testthat::expect_identical(gsim:::.gsim_gbits_unpack(retained$h1),
-                             gsim:::.gsim_gbits_unpack(pairs[["01"]]$h1))
+  testthat::expect_identical(gsim:::.gsim_packed_unpack(retained$h1),
+                             gsim:::.gsim_packed_unpack(pairs[["01"]]$h1))
   testthat::expect_identical(.Random.seed, rng_before)
 })
 
@@ -216,9 +216,9 @@ testthat::test_that("founder and pedigree packed phases survive HAP and emit exa
     backend, metadata_backend, file.path(root, "founders"))
   reloaded_founder <- gsim:::.gsim_hap_dataset_load_chromosome(
     founder_reader, "founder")
-  testthat::expect_identical(gsim:::.gsim_gbits_unpack(reloaded_founder$h1),
+  testthat::expect_identical(gsim:::.gsim_packed_unpack(reloaded_founder$h1),
                              raw_founder$h1)
-  testthat::expect_identical(gsim:::.gsim_gbits_unpack(reloaded_founder$h2),
+  testthat::expect_identical(gsim:::.gsim_packed_unpack(reloaded_founder$h2),
                              raw_founder$h2)
   gsim:::.gsim_hap_dataset_close(founder_reader)
 
@@ -257,8 +257,8 @@ testthat::test_that("founder and pedigree packed phases survive HAP and emit exa
   pedigree_reader <- gsim:::.gsim_hap_dataset_open(
     backend, metadata_backend, file.path(root, "pedigree"))
   reloaded <- gsim:::.gsim_hap_dataset_load_chromosome(pedigree_reader, "ped")
-  loaded_h1 <- gsim:::.gsim_gbits_unpack(reloaded$h1)
-  loaded_h2 <- gsim:::.gsim_gbits_unpack(reloaded$h2)
+  loaded_h1 <- gsim:::.gsim_packed_unpack(reloaded$h1)
+  loaded_h2 <- gsim:::.gsim_packed_unpack(reloaded$h2)
   testthat::expect_identical(loaded_h1, raw_pedigree$h1)
   testthat::expect_identical(loaded_h2, raw_pedigree$h2)
   testthat::expect_equal(.hap_mendelian_errors(
@@ -268,7 +268,7 @@ testthat::test_that("founder and pedigree packed phases survive HAP and emit exa
     backend, file.path(root, "reloaded.bed"), rownames(loaded_h1))
   gsim:::.gsim_bed_sink_append(bed, "ped", reloaded$h1, reloaded$h2, pvars)
   bed_manifest <- gsim:::.gsim_bed_sink_finalize(bed)
-  decoded <- gsim:::.gsim_gbits_bed_read_all(
+  decoded <- gsim:::.gsim_packed_bed_read_all(
     backend, bed_manifest$path, nrow(loaded_h1), ncol(loaded_h1),
     rownames(loaded_h1), colnames(loaded_h1))
   expected_genotypes <- matrix(as.integer(raw_pedigree$genotypes),

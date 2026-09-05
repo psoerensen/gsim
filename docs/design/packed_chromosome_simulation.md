@@ -5,33 +5,31 @@
 The committed byte-matrix founder and pedigree implementations remain the
 independent exact oracles.  `gsim` owns validation, RNG streams, HAPNEST and
 meiosis event generation, pedigree traversal, chromosome orchestration, IDs,
-maps, and audit records.  `gbits` 0.18 provides the mutable one-bit storage and
-policy-free materializers through stable C ABI 4.  `gmat` is not used here; it
-remains the future owner of persistent panel, chromosome, variant, allele, and
-map metadata.
+maps, and audit records. The private `gsim::native` implementation provides
+mutable one-bit storage and policy-free materializers. Packed and file-format
+code originated from our `gbits` project at revision
+`089bf1e69dea356248a62bb2d3bded4e84c64f7f` and retains its applicable MIT
+notice. Metadata and VCF components originated in our own `gmat` project at
+revision `33d6751abf00c41a15223459df7cae028d54b4b5` and are distributed as part
+of gsim under gsim's GPL-3 license. No external library is used.
 
 The interface is deliberately internal and chromosome-local:
 
 ```
-.gsim_gbits_backend(library)
+.gsim_packed_backend()
 .gsim_hapnest_founders_packed_chromosome(...)
 .gsim_pedigree_genotypes_packed_chromosome(...)
-.gsim_gbits_unpack(haplotypes)       # bounded validation only
-.gsim_gbits_decode_genotypes(h1, h2) # optional validation output only
+.gsim_packed_unpack(haplotypes)       # bounded validation only
+.gsim_packed_decode_genotypes(h1, h2) # optional validation output only
 ```
 
 HAP-loaded packed reference handles now enter the same materializer directly;
 the additive integration and explicit ownership contract are frozen in
 `hap_reference_founders.md`.
 
-The library path is explicit or comes from `GSIM_GBITS_LIBRARY`.  R loads that
-exact shared object, resolves every required phased-haplotype symbol, and the
-native adapter requires ABI 4 before constructing a handle.  Missing files,
-missing symbols, and ABI mismatches fail clearly.  The R external pointer owns
-the `gbits` handle; its protected backend object keeps function addresses and
-the loaded-library record alive until the handle finalizer calls the matching
-close function.  The ordinary package and raw oracles remain usable without
-`gbits`.
+R external pointers own private packed handles in the package DLL. Finalizers
+close the matching object. There is no dynamic loader, external ABI, library
+path, environment-variable lookup, or fallback implementation.
 
 ## Shared deterministic event semantics
 
@@ -77,9 +75,5 @@ requesting the next chromosome.
 
 ## Deferred work
 
-VCF ingestion, persistent panel integration, multithreading,
-SIMD, phenotype integration, and whole-genome retained objects remain outside
-this milestone. `gbits` 0.19 now supplies the separately qualified direct
-SNP-major BED sink described in `direct_packed_bed.md`; the subsequent
-`plink_dataset_production.md` layer supplies BIM/FAM identity, ordering, and
-allele-orientation metadata through `gmat`.
+BGZF/BCF, missing or multiallelic alleles, compression, memory mapping,
+threading, SIMD, and phenotype integration remain outside this path.

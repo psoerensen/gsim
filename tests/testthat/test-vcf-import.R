@@ -1,7 +1,7 @@
 .vcf_backends <- function() {
   list(
-    gbits = gsim:::.gsim_gbits_backend(Sys.getenv("GSIM_GBITS_LIBRARY")),
-    gmat = gsim:::.gsim_gmat_backend(Sys.getenv("GSIM_GMAT_LIBRARY"))
+    gbits = gsim:::.gsim_packed_backend(),
+    gmat = gsim:::.gsim_metadata_backend()
   )
 }
 
@@ -47,20 +47,20 @@ testthat::test_that("strict VCF import preserves exact phase and metadata", {
   z <- gsim:::.gsim_hap_dataset_load_chromosome(reader, "z")
   two <- gsim:::.gsim_hap_dataset_load_chromosome(reader, "2")
   testthat::expect_identical(
-    unname(gsim:::.gsim_gbits_unpack(z$h1)),
+    unname(gsim:::.gsim_packed_unpack(z$h1)),
     matrix(as.raw(c(0, 1, 1, 0)), 2L, 2L))
   testthat::expect_identical(
-    unname(gsim:::.gsim_gbits_unpack(z$h2)),
+    unname(gsim:::.gsim_packed_unpack(z$h2)),
     matrix(as.raw(c(1, 0, 1, 0)), 2L, 2L))
   testthat::expect_identical(
-    unname(gsim:::.gsim_gbits_unpack(two$h1)), matrix(as.raw(c(0, 1)), 2L, 1L))
+    unname(gsim:::.gsim_packed_unpack(two$h1)), matrix(as.raw(c(0, 1)), 2L, 1L))
   testthat::expect_identical(
-    unname(gsim:::.gsim_gbits_unpack(two$h2)), matrix(as.raw(c(0, 1)), 2L, 1L))
+    unname(gsim:::.gsim_packed_unpack(two$h2)), matrix(as.raw(c(0, 1)), 2L, 1L))
   testthat::expect_identical(
-    as.integer(gsim:::.gsim_gbits_word(z$h1, 1L, 1L)),
+    as.integer(gsim:::.gsim_packed_word(z$h1, 1L, 1L)),
     c(2L, rep.int(0L, 7L)))
   testthat::expect_identical(
-    as.integer(gsim:::.gsim_gbits_word(z$h2, 1L, 1L)),
+    as.integer(gsim:::.gsim_packed_word(z$h2, 1L, 1L)),
     c(1L, rep.int(0L, 7L)))
   testthat::expect_identical(
     readLines(first$paths[["bim"]], warn = FALSE),
@@ -69,8 +69,8 @@ testthat::test_that("strict VCF import preserves exact phase and metadata", {
   testthat::expect_identical(
     readLines(first$paths[["fam"]], warn = FALSE),
     c("f1\ts1\t0\t0\t1\t-9", "f2\ts2\t0\t0\t2\t-9"))
-  gsim:::.gsim_gbits_close(z$h1); gsim:::.gsim_gbits_close(z$h2)
-  gsim:::.gsim_gbits_close(two$h1); gsim:::.gsim_gbits_close(two$h2)
+  gsim:::.gsim_packed_close(z$h1); gsim:::.gsim_packed_close(z$h2)
+  gsim:::.gsim_packed_close(two$h1); gsim:::.gsim_packed_close(two$h2)
   gsim:::.gsim_hap_dataset_close(reader)
 
   second <- gsim:::.gsim_import_vcf_internal(
@@ -102,12 +102,12 @@ testthat::test_that("packed import handles word-boundary sample counts", {
     loaded <- gsim:::.gsim_hap_dataset_load_chromosome(reader, "1")
     expected_h1 <- as.raw(as.integer(substr(gt, 1, 1)))
     expected_h2 <- as.raw(as.integer(substr(gt, 3, 3)))
-    testthat::expect_identical(as.vector(gsim:::.gsim_gbits_unpack(loaded$h1)),
+    testthat::expect_identical(as.vector(gsim:::.gsim_packed_unpack(loaded$h1)),
                                expected_h1)
-    testthat::expect_identical(as.vector(gsim:::.gsim_gbits_unpack(loaded$h2)),
+    testthat::expect_identical(as.vector(gsim:::.gsim_packed_unpack(loaded$h2)),
                                expected_h2)
     testthat::expect_equal(manifest$packed_data_bytes, 2 * ceiling(n / 64) * 8)
-    gsim:::.gsim_gbits_close(loaded$h1); gsim:::.gsim_gbits_close(loaded$h2)
+    gsim:::.gsim_packed_close(loaded$h1); gsim:::.gsim_packed_close(loaded$h2)
     gsim:::.gsim_hap_dataset_close(reader)
   }
 })

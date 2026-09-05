@@ -1,5 +1,5 @@
 .packed_backend <- function() {
-  gsim:::.gsim_gbits_backend(Sys.getenv("GSIM_GBITS_LIBRARY"))
+  gsim:::.gsim_packed_backend()
 }
 
 .packed_founder_fixture <- function(
@@ -92,34 +92,35 @@
   errors
 }
 
-testthat::test_that("gbits backend fails clearly when unavailable", {
-  testthat::expect_error(gsim:::.gsim_gbits_backend(""),
-                         "shared-library path is required")
+testthat::test_that("packed backend is compiled into gsim", {
+  backend <- gsim:::.gsim_packed_backend()
+  testthat::expect_s3_class(backend, "gsim_packed_backend")
+  testthat::expect_null(attr(backend, "library", exact = TRUE))
 })
 
 testthat::test_that("packed words follow marker-major LSB-first storage", {
   backend <- .packed_backend()
   values <- matrix(as.raw(0), 65L, 2L)
   values[c(1L, 64L, 65L), 1L] <- as.raw(1)
-  packed <- gsim:::.gsim_gbits_pack(backend, values)
-  testthat::expect_identical(gsim:::.gsim_gbits_unpack(packed), values)
+  packed <- gsim:::.gsim_packed_pack(backend, values)
+  testthat::expect_identical(gsim:::.gsim_packed_unpack(packed), values)
   testthat::expect_identical(
-    as.integer(gsim:::.gsim_gbits_word(packed, 1L, 1L)),
+    as.integer(gsim:::.gsim_packed_word(packed, 1L, 1L)),
     c(1L, 0L, 0L, 0L, 0L, 0L, 0L, 128L)
   )
   testthat::expect_identical(
-    as.integer(gsim:::.gsim_gbits_word(packed, 1L, 2L)),
+    as.integer(gsim:::.gsim_packed_word(packed, 1L, 2L)),
     c(1L, rep.int(0L, 7L))
   )
-  testthat::expect_identical(unname(gsim:::.gsim_gbits_info(packed)),
+  testthat::expect_identical(unname(gsim:::.gsim_packed_info(packed)),
                              c(65, 2, 2, 32))
 })
 
 testthat::test_that("packed founder output and event records exactly match raw", {
   backend <- .packed_backend()
   fixture <- .packed_founder_fixture(backend)
-  packed_h1 <- gsim:::.gsim_gbits_unpack(fixture$packed$h1)
-  packed_h2 <- gsim:::.gsim_gbits_unpack(fixture$packed$h2)
+  packed_h1 <- gsim:::.gsim_packed_unpack(fixture$packed$h1)
+  packed_h2 <- gsim:::.gsim_packed_unpack(fixture$packed$h2)
   testthat::expect_identical(packed_h1, fixture$raw$h1)
   testthat::expect_identical(packed_h2, fixture$raw$h2)
   testthat::expect_identical(fixture$packed$genotypes, fixture$raw$genotypes)
@@ -141,8 +142,8 @@ testthat::test_that("packed founder output and event records exactly match raw",
     c(P = 2), c(P = 2), c(P = 1), seq(0, 1, length.out = 9L),
     rep(1e12, 9L), 6L, 17, rep("phase", 9L)
   )
-  testthat::expect_true(all(gsim:::.gsim_gbits_unpack(asymmetric$h1) == 0))
-  testthat::expect_true(all(gsim:::.gsim_gbits_unpack(asymmetric$h2) == 1))
+  testthat::expect_true(all(gsim:::.gsim_packed_unpack(asymmetric$h1) == 0))
+  testthat::expect_true(all(gsim:::.gsim_packed_unpack(asymmetric$h2) == 1))
 })
 
 testthat::test_that("packed founder streams are reproducible and option invariant", {
@@ -153,19 +154,19 @@ testthat::test_that("packed founder streams are reproducible and option invarian
     backend, seed = 77, return_genotypes = FALSE, return_segments = FALSE
   )
   different <- .packed_founder_fixture(backend, seed = 78)
-  testthat::expect_identical(gsim:::.gsim_gbits_unpack(first$packed$h1),
-                             gsim:::.gsim_gbits_unpack(same$packed$h1))
-  testthat::expect_identical(gsim:::.gsim_gbits_unpack(first$packed$h2),
-                             gsim:::.gsim_gbits_unpack(same$packed$h2))
-  testthat::expect_identical(gsim:::.gsim_gbits_unpack(first$packed$h1),
-                             gsim:::.gsim_gbits_unpack(no_audit$packed$h1))
-  testthat::expect_identical(gsim:::.gsim_gbits_unpack(first$packed$h2),
-                             gsim:::.gsim_gbits_unpack(no_audit$packed$h2))
+  testthat::expect_identical(gsim:::.gsim_packed_unpack(first$packed$h1),
+                             gsim:::.gsim_packed_unpack(same$packed$h1))
+  testthat::expect_identical(gsim:::.gsim_packed_unpack(first$packed$h2),
+                             gsim:::.gsim_packed_unpack(same$packed$h2))
+  testthat::expect_identical(gsim:::.gsim_packed_unpack(first$packed$h1),
+                             gsim:::.gsim_packed_unpack(no_audit$packed$h1))
+  testthat::expect_identical(gsim:::.gsim_packed_unpack(first$packed$h2),
+                             gsim:::.gsim_packed_unpack(no_audit$packed$h2))
   testthat::expect_null(same$packed$genotypes)
   testthat::expect_null(no_audit$packed$segments)
   testthat::expect_false(identical(
-    gsim:::.gsim_gbits_unpack(first$packed$h1),
-    gsim:::.gsim_gbits_unpack(different$packed$h1)
+    gsim:::.gsim_packed_unpack(first$packed$h1),
+    gsim:::.gsim_packed_unpack(different$packed$h1)
   ))
 
   batch1 <- .packed_founder_fixture(backend, n = 5L, seed = 77)
@@ -173,13 +174,13 @@ testthat::test_that("packed founder streams are reproducible and option invarian
     backend, n = 7L, seed = 77, individual_offset = 5L
   )
   testthat::expect_identical(
-    rbind(gsim:::.gsim_gbits_unpack(batch1$packed$h1),
-          gsim:::.gsim_gbits_unpack(batch2$packed$h1)),
+    rbind(gsim:::.gsim_packed_unpack(batch1$packed$h1),
+          gsim:::.gsim_packed_unpack(batch2$packed$h1)),
     first$raw$h1
   )
   testthat::expect_identical(
-    rbind(gsim:::.gsim_gbits_unpack(batch1$packed$h2),
-          gsim:::.gsim_gbits_unpack(batch2$packed$h2)),
+    rbind(gsim:::.gsim_packed_unpack(batch1$packed$h2),
+          gsim:::.gsim_packed_unpack(batch2$packed$h2)),
     first$raw$h2
   )
   testthat::expect_identical(
@@ -202,8 +203,8 @@ testthat::test_that("packed founder streams are reproducible and option invarian
 testthat::test_that("packed pedigree meiosis exactly matches raw across generations", {
   backend <- .packed_backend()
   fixture <- .packed_pedigree_fixture(backend)
-  h1 <- gsim:::.gsim_gbits_unpack(fixture$packed$h1)
-  h2 <- gsim:::.gsim_gbits_unpack(fixture$packed$h2)
+  h1 <- gsim:::.gsim_packed_unpack(fixture$packed$h1)
+  h2 <- gsim:::.gsim_packed_unpack(fixture$packed$h2)
   testthat::expect_identical(h1, fixture$raw$h1)
   testthat::expect_identical(h2, fixture$raw$h2)
   testthat::expect_identical(fixture$packed$genotypes, fixture$raw$genotypes)
@@ -224,25 +225,25 @@ testthat::test_that("fixed crossover materialization exactly matches the raw ora
   positions <- 0:5
   h1_values <- matrix(as.raw(c(0, 1, 0, 1, 0, 1)), 1L)
   h2_values <- matrix(as.raw(c(1, 0, 1, 0, 1, 0)), 1L)
-  h1 <- gsim:::.gsim_gbits_pack(backend, h1_values)
-  h2 <- gsim:::.gsim_gbits_pack(backend, h2_values)
+  h1 <- gsim:::.gsim_packed_pack(backend, h1_values)
+  h2 <- gsim:::.gsim_packed_pack(backend, h2_values)
   cases <- list(
     zero = numeric(), between = 2.5, exact = 3,
     multiple = c(1, 3, 4.5)
   )
   for (crossovers in cases) {
-    destination <- gsim:::.gsim_gbits_zero(backend, 1L, 6L)
+    destination <- gsim:::.gsim_packed_zero(backend, 1L, 6L)
     boundaries <- vapply(crossovers, function(x) {
       which(positions >= x)[[1L]] - 1L
     }, integer(1L))
-    gsim:::.gsim_gbits_make_gamete(
+    gsim:::.gsim_packed_make_gamete(
       destination, 1L, h1, h2, 1L, 1L, boundaries
     )
     expected <- gsim:::.gsim_meiosis_materialize(
       h1_values[1, ], h2_values[1, ], positions, crossovers, 1L
     )
     testthat::expect_identical(
-      as.raw(gsim:::.gsim_gbits_unpack(destination)[1, ]), expected
+      as.raw(gsim:::.gsim_packed_unpack(destination)[1, ]), expected
     )
   }
 })
@@ -256,21 +257,21 @@ testthat::test_that("packed pedigree streams are batch and option invariant", {
     backend, seed = 909, return_genotypes = FALSE, return_crossovers = FALSE
   )
   different <- .packed_pedigree_fixture(backend, seed = 910)
-  testthat::expect_identical(gsim:::.gsim_gbits_unpack(first$packed$h1),
-                             gsim:::.gsim_gbits_unpack(same$packed$h1))
-  testthat::expect_identical(gsim:::.gsim_gbits_unpack(first$packed$h2),
-                             gsim:::.gsim_gbits_unpack(same$packed$h2))
-  testthat::expect_identical(gsim:::.gsim_gbits_unpack(first$packed$h1),
-                             gsim:::.gsim_gbits_unpack(no_audit$packed$h1))
-  testthat::expect_identical(gsim:::.gsim_gbits_unpack(first$packed$h2),
-                             gsim:::.gsim_gbits_unpack(no_audit$packed$h2))
+  testthat::expect_identical(gsim:::.gsim_packed_unpack(first$packed$h1),
+                             gsim:::.gsim_packed_unpack(same$packed$h1))
+  testthat::expect_identical(gsim:::.gsim_packed_unpack(first$packed$h2),
+                             gsim:::.gsim_packed_unpack(same$packed$h2))
+  testthat::expect_identical(gsim:::.gsim_packed_unpack(first$packed$h1),
+                             gsim:::.gsim_packed_unpack(no_audit$packed$h1))
+  testthat::expect_identical(gsim:::.gsim_packed_unpack(first$packed$h2),
+                             gsim:::.gsim_packed_unpack(no_audit$packed$h2))
   testthat::expect_identical(first$packed$crossover_audit,
                              same$packed$crossover_audit)
   testthat::expect_null(same$packed$genotypes)
   testthat::expect_null(no_audit$packed$crossover_audit)
   testthat::expect_false(identical(
-    gsim:::.gsim_gbits_unpack(first$packed$h1),
-    gsim:::.gsim_gbits_unpack(different$packed$h1)
+    gsim:::.gsim_packed_unpack(first$packed$h1),
+    gsim:::.gsim_packed_unpack(different$packed$h1)
   ))
   set.seed(81)
   expected_rng <- runif(5)
@@ -292,11 +293,11 @@ testthat::test_that("three chromosomes are exactly independent of orchestration 
   names(reverse) <- rev(labels)
   for (label in labels) {
     testthat::expect_identical(
-      gsim:::.gsim_gbits_unpack(forward[[label]]$packed$h1),
-      gsim:::.gsim_gbits_unpack(reverse[[label]]$packed$h1)
+      gsim:::.gsim_packed_unpack(forward[[label]]$packed$h1),
+      gsim:::.gsim_packed_unpack(reverse[[label]]$packed$h1)
     )
     testthat::expect_identical(
-      gsim:::.gsim_gbits_unpack(forward[[label]]$packed$h2),
+      gsim:::.gsim_packed_unpack(forward[[label]]$packed$h2),
       forward[[label]]$raw$h2
     )
     testthat::expect_identical(forward[[label]]$packed$segments,
@@ -313,12 +314,12 @@ testthat::test_that("three chromosomes are exactly independent of orchestration 
   names(pedigree_reverse) <- rev(labels)
   for (label in labels) {
     testthat::expect_identical(
-      gsim:::.gsim_gbits_unpack(pedigree_forward[[label]]$packed$h1),
+      gsim:::.gsim_packed_unpack(pedigree_forward[[label]]$packed$h1),
       pedigree_forward[[label]]$raw$h1
     )
     testthat::expect_identical(
-      gsim:::.gsim_gbits_unpack(pedigree_forward[[label]]$packed$h2),
-      gsim:::.gsim_gbits_unpack(pedigree_reverse[[label]]$packed$h2)
+      gsim:::.gsim_packed_unpack(pedigree_forward[[label]]$packed$h2),
+      gsim:::.gsim_packed_unpack(pedigree_reverse[[label]]$packed$h2)
     )
     testthat::expect_identical(
       pedigree_forward[[label]]$packed$crossover_audit,
@@ -333,11 +334,11 @@ testthat::test_that("bounded memory accounting shows one-bit payload reduction",
   markers <- 129L
   values <- matrix(as.raw(rep(c(0L, 1L), length.out = individuals * markers)),
                    individuals, markers)
-  first <- gsim:::.gsim_gbits_pack(backend, values)
-  second <- gsim:::.gsim_gbits_pack(backend, values)
+  first <- gsim:::.gsim_packed_pack(backend, values)
+  second <- gsim:::.gsim_packed_pack(backend, values)
   raw_bytes <- 2 * length(values)
-  packed_bytes <- gsim:::.gsim_gbits_info(first)[[4L]] +
-    gsim:::.gsim_gbits_info(second)[[4L]]
+  packed_bytes <- gsim:::.gsim_packed_info(first)[[4L]] +
+    gsim:::.gsim_packed_info(second)[[4L]]
   testthat::expect_identical(raw_bytes, 33024)
   testthat::expect_identical(unname(packed_bytes), 4128)
   testthat::expect_identical(raw_bytes / packed_bytes, 8)

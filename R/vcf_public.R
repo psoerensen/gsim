@@ -1,5 +1,5 @@
 .gsim_public_backends <- function() {
-  list(gbits = .gsim_gbits_backend(), gmat = .gsim_gmat_backend())
+  list(packed = .gsim_packed_backend(), metadata = .gsim_metadata_backend())
 }
 
 .gsim_reference_descriptor <- function(reader, provenance = list()) {
@@ -53,9 +53,9 @@ gsim_import_vcf <- function(vcf, map, output, sample_metadata = NULL,
                             overwrite = FALSE) {
   backend <- .gsim_public_backends()
   manifest <- .gsim_import_vcf_internal(
-    backend$gbits, backend$gmat, vcf, map, output, sample_metadata, overwrite
+    backend$packed, backend$metadata, vcf, map, output, sample_metadata, overwrite
   )
-  reader <- .gsim_hap_dataset_open(backend$gbits, backend$gmat, output)
+  reader <- .gsim_hap_dataset_open(backend$packed, backend$metadata, output)
   on.exit(.gsim_hap_dataset_close(reader), add = TRUE)
   descriptor <- .gsim_reference_descriptor(reader, manifest$provenance)
   descriptor$import <- manifest$import
@@ -73,7 +73,7 @@ gsim_import_vcf <- function(vcf, map, output, sample_metadata = NULL,
 #' @export
 gsim_reference <- function(prefix) {
   backend <- .gsim_public_backends()
-  reader <- .gsim_hap_dataset_open(backend$gbits, backend$gmat, prefix)
+  reader <- .gsim_hap_dataset_open(backend$packed, backend$metadata, prefix)
   on.exit(.gsim_hap_dataset_close(reader), add = TRUE)
   .gsim_reference_descriptor(
     reader, list(operation = "validated existing HAP/BIM/FAM reference")
@@ -131,7 +131,7 @@ gsim_simulate <- function(
   }
   backend <- .gsim_public_backends()
   reader <- .gsim_hap_dataset_open(
-    backend$gbits, backend$gmat, reference$prefix
+    backend$packed, backend$metadata, reference$prefix
   )
   on.exit(try(.gsim_hap_dataset_close(reader), silent = TRUE), add = TRUE)
   populations <- .gsim_public_align(
@@ -156,10 +156,10 @@ gsim_simulate <- function(
     seed = seed, output_format = format
   )
   sink <- if (format == "hap") {
-    .gsim_hap_dataset_create(backend$gbits, backend$gmat, output,
+    .gsim_hap_dataset_create(backend$packed, backend$metadata, output,
                              sample_metadata, overwrite, provenance)
   } else {
-    .gsim_plink_dataset_create(backend$gbits, backend$gmat, output,
+    .gsim_plink_dataset_create(backend$packed, backend$metadata, output,
                                sample_metadata, overwrite,
                                provenance = provenance)
   }
@@ -185,23 +185,23 @@ gsim_simulate <- function(
       return_genotypes = FALSE, return_segments = FALSE
     )
     on.exit({
-      try(.gsim_gbits_close(founders$h1), silent = TRUE)
-      try(.gsim_gbits_close(founders$h2), silent = TRUE)
+      try(.gsim_packed_close(founders$h1), silent = TRUE)
+      try(.gsim_packed_close(founders$h2), silent = TRUE)
     }, add = TRUE)
-    founders$h1 <- .gsim_gbits_tag(founders$h1, founder_ids,
+    founders$h1 <- .gsim_packed_tag(founders$h1, founder_ids,
                                     variants$variant_id)
-    founders$h2 <- .gsim_gbits_tag(founders$h2, founder_ids,
+    founders$h2 <- .gsim_packed_tag(founders$h2, founder_ids,
                                     variants$variant_id)
     descendants <- .gsim_pedigree_genotypes_packed_chromosome(
-      backend$gbits, pedigree, list(h1 = founders$h1, h2 = founders$h2),
+      backend$packed, pedigree, list(h1 = founders$h1, h2 = founders$h2),
       rep.int(chromosome, nrow(variants)),
       variants$genetic_position_cm / 100, seed,
       return_haplotypes = TRUE, return_genotypes = FALSE,
       return_crossovers = FALSE
     )
     on.exit({
-      try(.gsim_gbits_close(descendants$h1), silent = TRUE)
-      try(.gsim_gbits_close(descendants$h2), silent = TRUE)
+      try(.gsim_packed_close(descendants$h1), silent = TRUE)
+      try(.gsim_packed_close(descendants$h2), silent = TRUE)
     }, add = TRUE)
     if (format == "hap") {
       .gsim_hap_dataset_append(sink, chromosome, descendants$h1,

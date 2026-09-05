@@ -1,97 +1,43 @@
-# Experimental chromosome-local gbits integration.  This interface is
-# intentionally unexported; statistical policy and event generation remain in
-# gsim, while the dynamically resolved gbits ABI owns packed storage.
-
-.gsim_gbits_symbols <- c(
-  "gbits_abi_version", "gbits_library_version", "gbits_last_error",
-  "gbits_phased_haplotype_create_zero",
-  "gbits_phased_haplotype_create_from_values",
-  "gbits_phased_haplotype_close",
-  "gbits_phased_haplotype_individual_count",
-  "gbits_phased_haplotype_marker_count",
-  "gbits_phased_haplotype_words_per_marker",
-  "gbits_phased_haplotype_storage_bytes",
-  "gbits_phased_haplotype_word",
-  "gbits_phased_haplotype_allele",
-  "gbits_phased_haplotype_set_allele",
-  "gbits_phased_haplotype_unpack",
-  "gbits_phased_haplotype_copy_interval",
-  "gbits_phased_haplotype_copy_filtered_segment",
-  "gbits_phased_haplotype_make_gamete",
-  "gbits_phased_haplotype_decode_genotypes",
-  "gbits_bed_open", "gbits_bed_close", "gbits_bed_read_variant",
-  "gbits_bed_sink_create", "gbits_bed_sink_append_phased",
-  "gbits_bed_sink_finalize", "gbits_bed_sink_get_info",
-  "gbits_bed_sink_close",
-  "gbits_hap_sink_create", "gbits_hap_sink_append_phased",
-  "gbits_hap_sink_finalize", "gbits_hap_sink_get_info",
-  "gbits_hap_sink_close", "gbits_hap_reader_open",
-  "gbits_hap_reader_close", "gbits_hap_reader_dimensions",
-  "gbits_hap_reader_chromosome_info",
-  "gbits_hap_reader_load_chromosome"
-)
-
-.gsim_gbits_backend <- function(
-  library = Sys.getenv("GSIM_GBITS_LIBRARY", unset = "")
-) {
-  if (!is.character(library) || length(library) != 1L || is.na(library) ||
-      !nzchar(library)) {
-    .gsim_stop(
-      "A gbits shared-library path is required via library or GSIM_GBITS_LIBRARY."
-    )
-  }
-  path <- normalizePath(library, winslash = "/", mustWork = TRUE)
-  dll <- tryCatch(
-    dyn.load(path, local = TRUE, now = TRUE),
-    error = function(error) .gsim_stop("Unable to load gbits: ", conditionMessage(error))
-  )
-  addresses <- tryCatch(
-    stats::setNames(lapply(.gsim_gbits_symbols, function(name) {
-      getNativeSymbolInfo(name, PACKAGE = dll)$address
-    }), .gsim_gbits_symbols),
-    error = function(error) {
-      .gsim_stop("Incompatible gbits library: ", conditionMessage(error))
-    }
-  )
-  pointer <- .Call(C_gsim_gbits_backend, addresses)
-  attr(pointer, "library") <- path
-  attr(pointer, "dll") <- dll
-  attr(pointer, "gbits_abi") <- 4L
-  class(pointer) <- "gsim_gbits_backend"
+# Private chromosome-local packed backend compiled into gsim.
+.gsim_packed_backend <- function() {
+  pointer <- .Call(C_gsim_packed_backend)
+  attr(pointer, "packed_origin") <- "internalized gbits 0.20.0 (089bf1e)"
+  attr(pointer, "packed_abi") <- NA_integer_
+  class(pointer) <- "gsim_packed_backend"
   pointer
 }
 
-.gsim_gbits_tag <- function(pointer, sample_ids = NULL, variant_ids = NULL) {
+.gsim_packed_tag <- function(pointer, sample_ids = NULL, variant_ids = NULL) {
   attr(pointer, "sample_ids") <- sample_ids
   attr(pointer, "variant_ids") <- variant_ids
-  class(pointer) <- "gsim_gbits_haplotypes"
+  class(pointer) <- "gsim_packed_haplotypes"
   pointer
 }
 
-.gsim_gbits_pack <- function(backend, values) {
+.gsim_packed_pack <- function(backend, values) {
   values <- .gsim_hapnest_raw_matrix(values, "values")
-  .gsim_gbits_tag(
-    .Call(C_gsim_gbits_pack, backend, values), rownames(values), colnames(values)
+  .gsim_packed_tag(
+    .Call(C_gsim_packed_pack, backend, values), rownames(values), colnames(values)
   )
 }
 
-.gsim_gbits_zero <- function(backend, individuals, markers,
+.gsim_packed_zero <- function(backend, individuals, markers,
                              sample_ids = NULL, variant_ids = NULL) {
   individuals <- .gsim_hapnest_integer_scalar(individuals, "individuals", 1)
   markers <- .gsim_hapnest_integer_scalar(markers, "markers", 1)
-  .gsim_gbits_tag(
-    .Call(C_gsim_gbits_zero, backend, individuals, markers),
+  .gsim_packed_tag(
+    .Call(C_gsim_packed_zero, backend, individuals, markers),
     sample_ids, variant_ids
   )
 }
 
-.gsim_gbits_set_marker <- function(h1, h2, marker, h1_values, h2_values) {
-  invisible(.Call(C_gsim_gbits_set_marker, h1, h2, as.integer(marker),
+.gsim_packed_set_marker <- function(h1, h2, marker, h1_values, h2_values) {
+  invisible(.Call(C_gsim_packed_set_marker, h1, h2, as.integer(marker),
                   h1_values, h2_values))
 }
 
-.gsim_gbits_unpack <- function(haplotypes) {
-  out <- .Call(C_gsim_gbits_unpack, haplotypes)
+.gsim_packed_unpack <- function(haplotypes) {
+  out <- .Call(C_gsim_packed_unpack, haplotypes)
   sample_ids <- attr(haplotypes, "sample_ids", exact = TRUE)
   variant_ids <- attr(haplotypes, "variant_ids", exact = TRUE)
   if (!is.null(sample_ids) || !is.null(variant_ids)) {
@@ -100,21 +46,21 @@
   out
 }
 
-.gsim_gbits_info <- function(haplotypes) {
-  .Call(C_gsim_gbits_info, haplotypes)
+.gsim_packed_info <- function(haplotypes) {
+  .Call(C_gsim_packed_info, haplotypes)
 }
 
-.gsim_gbits_close <- function(haplotypes) {
-  invisible(.Call(C_gsim_gbits_close, haplotypes))
+.gsim_packed_close <- function(haplotypes) {
+  invisible(.Call(C_gsim_packed_close, haplotypes))
 }
 
-.gsim_gbits_word <- function(haplotypes, marker, word) {
+.gsim_packed_word <- function(haplotypes, marker, word) {
   marker <- .gsim_hapnest_integer_scalar(marker, "marker", 1)
   word <- .gsim_hapnest_integer_scalar(word, "word", 1)
-  .Call(C_gsim_gbits_word, haplotypes, marker - 1L, word - 1L)
+  .Call(C_gsim_packed_word, haplotypes, marker - 1L, word - 1L)
 }
 
-.gsim_gbits_copy_interval <- function(destination, destination_individual,
+.gsim_packed_copy_interval <- function(destination, destination_individual,
                                       source, source_individual, first, last) {
   values <- c(
     destination_individual = .gsim_hapnest_integer_scalar(
@@ -127,12 +73,12 @@
     last = .gsim_hapnest_integer_scalar(last, "last", 1)
   )
   invisible(.Call(
-    C_gsim_gbits_copy_interval, destination, values[[1L]] - 1L,
+    C_gsim_packed_copy_interval, destination, values[[1L]] - 1L,
     source, values[[2L]] - 1L, values[[3L]] - 1L, values[[4L]] - 1L
   ))
 }
 
-.gsim_gbits_copy_filtered <- function(destination, destination_individual,
+.gsim_packed_copy_filtered <- function(destination, destination_individual,
                                       source, source_individual, first, last,
                                       coalescent_age, mutation_age) {
   if (!is.numeric(coalescent_age) || length(coalescent_age) != 1L ||
@@ -141,14 +87,14 @@
   }
   mutation_age <- as.double(mutation_age)
   invisible(.Call(
-    C_gsim_gbits_copy_filtered, destination,
+    C_gsim_packed_copy_filtered, destination,
     as.integer(destination_individual - 1L), source,
     as.integer(source_individual - 1L), as.integer(first - 1L),
     as.integer(last - 1L), as.double(coalescent_age), mutation_age
   ))
 }
 
-.gsim_gbits_copy_filtered_counts <- function(
+.gsim_packed_copy_filtered_counts <- function(
   destination, destination_individual, source, source_individual, first, last,
   coalescent_age, mutation_age
 ) {
@@ -157,26 +103,26 @@
     .gsim_stop("coalescent_age must be one finite nonnegative value.")
   }
   .Call(
-    C_gsim_gbits_copy_filtered_counts, destination,
+    C_gsim_packed_copy_filtered_counts, destination,
     as.integer(destination_individual - 1L), source,
     as.integer(source_individual - 1L), as.integer(first - 1L),
     as.integer(last - 1L), as.double(coalescent_age), as.double(mutation_age)
   )
 }
 
-.gsim_gbits_make_gamete <- function(destination, destination_individual,
+.gsim_packed_make_gamete <- function(destination, destination_individual,
                                     parent_h1, parent_h2, parent_individual,
                                     starting_haplotype, boundaries) {
   invisible(.Call(
-    C_gsim_gbits_make_gamete, destination,
+    C_gsim_packed_make_gamete, destination,
     as.integer(destination_individual - 1L), parent_h1, parent_h2,
     as.integer(parent_individual - 1L), as.integer(starting_haplotype),
     as.integer(boundaries)
   ))
 }
 
-.gsim_gbits_decode_genotypes <- function(h1, h2) {
-  out <- .Call(C_gsim_gbits_decode_genotypes, h1, h2)
+.gsim_packed_decode_genotypes <- function(h1, h2) {
+  out <- .Call(C_gsim_packed_decode_genotypes, h1, h2)
   dimnames(out) <- list(
     attr(h1, "sample_ids", exact = TRUE),
     attr(h1, "variant_ids", exact = TRUE)
@@ -203,13 +149,13 @@
   return_segments = TRUE,
   individual_offset = 0L
 ) {
-  if (!inherits(backend, "gsim_gbits_backend") ||
-      !inherits(reference_h1, "gsim_gbits_haplotypes") ||
-      !inherits(reference_h2, "gsim_gbits_haplotypes")) {
+  if (!inherits(backend, "gsim_packed_backend") ||
+      !inherits(reference_h1, "gsim_packed_haplotypes") ||
+      !inherits(reference_h2, "gsim_packed_haplotypes")) {
     .gsim_stop("backend and packed reference H1/H2 handles are required.")
   }
-  info_h1 <- .gsim_gbits_info(reference_h1)
-  info_h2 <- .gsim_gbits_info(reference_h2)
+  info_h1 <- .gsim_packed_info(reference_h1)
+  info_h2 <- .gsim_packed_info(reference_h2)
   if (!identical(unname(info_h1[1:3]), unname(info_h2[1:3]))) {
     .gsim_stop("Packed reference H1 and H2 dimensions and layout must match.")
   }
@@ -342,15 +288,15 @@
   class(segment) <- "data.frame"
   attr(segment, "row.names") <- .set_row_names(length(segment$phase))
   ids <- paste0("syn", input$individual_offset + seq_len(input$n))
-  h1 <- .gsim_gbits_zero(backend, input$n, input$marker_count,
+  h1 <- .gsim_packed_zero(backend, input$n, input$marker_count,
                          ids, input$variant_ids)
-  h2 <- .gsim_gbits_zero(backend, input$n, input$marker_count,
+  h2 <- .gsim_packed_zero(backend, input$n, input$marker_count,
                          ids, input$variant_ids)
   materialized <- FALSE
   on.exit({
     if (!materialized) {
-      try(.gsim_gbits_close(h1), silent = TRUE)
-      try(.gsim_gbits_close(h2), silent = TRUE)
+      try(.gsim_packed_close(h1), silent = TRUE)
+      try(.gsim_packed_close(h2), silent = TRUE)
     }
   }, add = TRUE)
   for (i in seq_len(nrow(segment))) {
@@ -358,28 +304,28 @@
     destination <- if (record$phase == 1L) h1 else h2
     source <- if (record$phase == 1L) reference_h1 else reference_h2
     if (input$return_segments) {
-      counts <- .gsim_gbits_copy_filtered_counts(
+      counts <- .gsim_packed_copy_filtered_counts(
         destination, record$individual - input$individual_offset, source,
         record$donor_individual, record$start, record$end,
         record$coalescent_age, input$mutation_age)
       segment$copied_alternative[[i]] <- counts[[1L]]
       segment$retained_alternative[[i]] <- counts[[2L]]
     } else {
-      .gsim_gbits_copy_filtered(
+      .gsim_packed_copy_filtered(
         destination, record$individual - input$individual_offset, source,
         record$donor_individual, record$start, record$end,
         record$coalescent_age, input$mutation_age)
     }
   }
   genotypes <- if (input$return_genotypes) {
-    .gsim_gbits_decode_genotypes(h1, h2)
+    .gsim_packed_decode_genotypes(h1, h2)
   } else NULL
   settings <- list(
     model = "HAPNEST founder core",
     hapnest_revision = "ba52da1a63cf609306ea92540b3d130fa1efd213",
     donor_phase = "hapnest",
     reference_layout = "paired packed H1/H2 rows are reference individuals",
-    reference_source = "caller-owned gbits handles",
+    reference_source = "caller-owned gsim packed handles",
     chromosome_identity = "exact UTF-8 label bytes; no normalization",
     chromosome_hash = "FNV-1a 64-bit",
     rng = "SplitMix64 per (seed, global haplotype, chromosome identity)",
@@ -390,12 +336,12 @@
     Ne = stats::setNames(input$Ne, input$active),
     rho = stats::setNames(input$rho, input$active),
     chromosomes = input$chromosome[[1L]],
-    storage = "gbits marker-major one-bit phased haplotypes",
-    gbits_version = attr(backend, "gbits_version", exact = TRUE),
+    storage = "gsim marker-major one-bit phased haplotypes",
+    implementation_origin = attr(backend, "packed_origin", exact = TRUE),
     decoded_genotypes = input$return_genotypes)
   reference_bytes <- unname(input$info_h1[[4L]] + input$info_h2[[4L]])
-  generated_bytes <- unname(.gsim_gbits_info(h1)[[4L]] +
-                              .gsim_gbits_info(h2)[[4L]])
+  generated_bytes <- unname(.gsim_packed_info(h1)[[4L]] +
+                              .gsim_packed_info(h2)[[4L]])
   out <- list(
     h1 = h1, h2 = h2, genotypes = genotypes,
     segments = if (input$return_segments) segment else NULL,
@@ -430,11 +376,11 @@
       !identical(dimnames(raw_h1), dimnames(raw_h2))) {
     .gsim_stop("Reference H1/H2 dimensions and names must be identical.")
   }
-  reference_h1 <- .gsim_gbits_pack(backend, raw_h1)
-  reference_h2 <- .gsim_gbits_pack(backend, raw_h2)
+  reference_h1 <- .gsim_packed_pack(backend, raw_h1)
+  reference_h2 <- .gsim_packed_pack(backend, raw_h2)
   on.exit({
-    try(.gsim_gbits_close(reference_h1), silent = TRUE)
-    try(.gsim_gbits_close(reference_h2), silent = TRUE)
+    try(.gsim_packed_close(reference_h1), silent = TRUE)
+    try(.gsim_packed_close(reference_h2), silent = TRUE)
   }, add = TRUE)
   out <- .gsim_hapnest_founders_packed_reference_chromosome(
     backend, reference_h1, reference_h2, donor_population, ancestry_weights,
@@ -501,17 +447,17 @@
       !all(c("h1", "h2") %in% names(founder_haplotypes))) {
     .gsim_stop("founder_haplotypes must be a named list containing h1 and h2.")
   }
-  packed_founders <- inherits(founder_haplotypes$h1, "gsim_gbits_haplotypes") &&
-    inherits(founder_haplotypes$h2, "gsim_gbits_haplotypes")
-  if (xor(inherits(founder_haplotypes$h1, "gsim_gbits_haplotypes"),
-          inherits(founder_haplotypes$h2, "gsim_gbits_haplotypes"))) {
+  packed_founders <- inherits(founder_haplotypes$h1, "gsim_packed_haplotypes") &&
+    inherits(founder_haplotypes$h2, "gsim_packed_haplotypes")
+  if (xor(inherits(founder_haplotypes$h1, "gsim_packed_haplotypes"),
+          inherits(founder_haplotypes$h2, "gsim_packed_haplotypes"))) {
     .gsim_stop("Founder H1 and H2 must both be packed handles or both be matrices.")
   }
   if (packed_founders) {
     source_h1 <- founder_haplotypes$h1
     source_h2 <- founder_haplotypes$h2
-    info_h1 <- .gsim_gbits_info(source_h1)
-    info_h2 <- .gsim_gbits_info(source_h2)
+    info_h1 <- .gsim_packed_info(source_h1)
+    info_h2 <- .gsim_packed_info(source_h2)
     if (!identical(unname(info_h1[1:3]), unname(info_h2[1:3]))) {
       .gsim_stop("Founder packed H1 and H2 dimensions and layout must match.")
     }
@@ -561,11 +507,11 @@
     founder_row_count <- nrow(founder_h1)
     marker_count <- ncol(founder_h1)
     founder_raw_bytes <- 2 * length(founder_h1)
-    source_h1 <- .gsim_gbits_pack(backend, founder_h1)
-    source_h2 <- .gsim_gbits_pack(backend, founder_h2)
+    source_h1 <- .gsim_packed_pack(backend, founder_h1)
+    source_h2 <- .gsim_packed_pack(backend, founder_h2)
     on.exit({
-      try(.gsim_gbits_close(source_h1), silent = TRUE)
-      try(.gsim_gbits_close(source_h2), silent = TRUE)
+      try(.gsim_packed_close(source_h1), silent = TRUE)
+      try(.gsim_packed_close(source_h2), silent = TRUE)
     }, add = TRUE)
   }
   founder_ids <- canonical[founder]
@@ -605,16 +551,16 @@
   }
 
   animal_count <- length(canonical)
-  h1 <- .gsim_gbits_zero(backend, animal_count, marker_count,
+  h1 <- .gsim_packed_zero(backend, animal_count, marker_count,
                          canonical, variant_ids)
-  h2 <- .gsim_gbits_zero(backend, animal_count, marker_count,
+  h2 <- .gsim_packed_zero(backend, animal_count, marker_count,
                          canonical, variant_ids)
   founder_order <- match(founder_ids, supplied_ids)
   founder_positions <- match(founder_ids, canonical)
   for (i in seq_along(founder_ids)) {
-    .gsim_gbits_copy_interval(h1, founder_positions[[i]], source_h1,
+    .gsim_packed_copy_interval(h1, founder_positions[[i]], source_h1,
                               founder_order[[i]], 1L, marker_count)
-    .gsim_gbits_copy_interval(h2, founder_positions[[i]], source_h2,
+    .gsim_packed_copy_interval(h2, founder_positions[[i]], source_h2,
                               founder_order[[i]], 1L, marker_count)
   }
 
@@ -635,7 +581,7 @@
           chromosome[[1L]], as.integer(side)
         )
         destination <- if (side == 1L) h1 else h2
-        .gsim_gbits_make_gamete(
+        .gsim_packed_make_gamete(
           destination, i, h1, h2, parent_position,
           plan$starting_haplotype, plan$boundaries
         )
@@ -668,7 +614,7 @@
       }
     }
   }
-  genotypes <- if (return_genotypes) .gsim_gbits_decode_genotypes(h1, h2) else NULL
+  genotypes <- if (return_genotypes) .gsim_packed_decode_genotypes(h1, h2) else NULL
   crossover_audit <- NULL
   if (return_crossovers) {
     crossover_audit <- list(
@@ -722,19 +668,19 @@
       seed = as.double(seed), global_rng = "not used",
       batch_policy = "operational batch boundaries do not enter RNG streams",
       unrelated_animal_policy = "stable IDs leave existing streams unchanged",
-      storage = "gbits marker-major one-bit phased haplotypes",
+      storage = "gsim marker-major one-bit phased haplotypes",
       founder_source = if (packed_founders) "caller-owned packed handles" else
         "caller-supplied byte matrices packed internally",
-      gbits_version = attr(backend, "gbits_version", exact = TRUE),
+      implementation_origin = attr(backend, "packed_origin", exact = TRUE),
       decoded_genotypes = return_genotypes
     ),
     memory = list(
       founder_raw_bytes = founder_raw_bytes,
-      founder_packed_bytes = unname(.gsim_gbits_info(source_h1)[[4L]] +
-                                      .gsim_gbits_info(source_h2)[[4L]]),
+      founder_packed_bytes = unname(.gsim_packed_info(source_h1)[[4L]] +
+                                      .gsim_packed_info(source_h2)[[4L]]),
       generated_raw_bytes = 2 * animal_count * marker_count,
-      generated_packed_bytes = unname(.gsim_gbits_info(h1)[[4L]] +
-                                        .gsim_gbits_info(h2)[[4L]]),
+      generated_packed_bytes = unname(.gsim_packed_info(h1)[[4L]] +
+                                        .gsim_packed_info(h2)[[4L]]),
       event_record_bytes = meiosis_event_bytes,
       chromosome_temporary_bytes = 8 * max(
         1L, if (return_crossovers && nrow(crossover_audit$meioses))

@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#include "standalone_metadata_api.h"
+
 namespace {
 
 using status_t = int;
@@ -78,21 +80,6 @@ struct VcfReader {
 
 [[noreturn]] void fail(const std::string& message) {
     throw std::runtime_error(message);
-}
-
-template <typename Function>
-Function symbol(SEXP symbols, const char* name) {
-    SEXP names = Rf_getAttrib(symbols, R_NamesSymbol);
-    for (R_xlen_t i = 0; i < XLENGTH(symbols); ++i) {
-        if (std::string(CHAR(STRING_ELT(names, i))) == name) {
-            SEXP pointer = VECTOR_ELT(symbols, i);
-            if (TYPEOF(pointer) != EXTPTRSXP || R_ExternalPtrAddr(pointer) == nullptr) {
-                fail(std::string("gmat symbol has no address: ") + name);
-            }
-            return reinterpret_cast<Function>(R_ExternalPtrAddr(pointer));
-        }
-    }
-    fail(std::string("missing gmat symbol: ") + name);
 }
 
 Backend* require_backend(SEXP pointer) {
@@ -213,40 +200,37 @@ void set_names(SEXP value, const std::vector<const char*>& labels) {
 
 }  // namespace
 
-extern "C" SEXP C_gsim_gmat_backend(SEXP symbols) {
+extern "C" SEXP C_gsim_metadata_backend() {
     try {
-        if (TYPEOF(symbols) != VECSXP || Rf_getAttrib(symbols, R_NamesSymbol) == R_NilValue) {
-            fail("gmat symbols must be a named list");
-        }
         Backend* backend = new Backend{};
         try {
-            backend->abi_version = symbol<decltype(backend->abi_version)>(symbols, "gmat_abi_version");
-            backend->library_version = symbol<decltype(backend->library_version)>(symbols, "gmat_library_version");
-            backend->last_error = symbol<decltype(backend->last_error)>(symbols, "gmat_last_error");
-            backend->variant_create = symbol<decltype(backend->variant_create)>(symbols, "gmat_variant_metadata_create");
-            backend->variant_close = symbol<decltype(backend->variant_close)>(symbols, "gmat_variant_metadata_close");
-            backend->variant_read = symbol<decltype(backend->variant_read)>(symbols, "gmat_variant_metadata_read_bim");
-            backend->variant_count = symbol<decltype(backend->variant_count)>(symbols, "gmat_variant_metadata_count");
-            backend->variant_get = symbol<decltype(backend->variant_get)>(symbols, "gmat_variant_metadata_get");
-            backend->variant_write = symbol<decltype(backend->variant_write)>(symbols, "gmat_variant_metadata_write_bim");
-            backend->sample_create = symbol<decltype(backend->sample_create)>(symbols, "gmat_sample_metadata_create");
-            backend->sample_close = symbol<decltype(backend->sample_close)>(symbols, "gmat_sample_metadata_close");
-            backend->sample_read = symbol<decltype(backend->sample_read)>(symbols, "gmat_sample_metadata_read_fam");
-            backend->sample_count = symbol<decltype(backend->sample_count)>(symbols, "gmat_sample_metadata_count");
-            backend->sample_get = symbol<decltype(backend->sample_get)>(symbols, "gmat_sample_metadata_get");
-            backend->sample_write = symbol<decltype(backend->sample_write)>(symbols, "gmat_sample_metadata_write_fam");
-            backend->vcf_open = symbol<decltype(backend->vcf_open)>(symbols, "gmat_phased_vcf_reader_open");
-            backend->vcf_close = symbol<decltype(backend->vcf_close)>(symbols, "gmat_phased_vcf_reader_close");
-            backend->vcf_dimensions = symbol<decltype(backend->vcf_dimensions)>(symbols, "gmat_phased_vcf_reader_dimensions");
-            backend->vcf_sample = symbol<decltype(backend->vcf_sample)>(symbols, "gmat_phased_vcf_reader_sample");
-            backend->vcf_variant = symbol<decltype(backend->vcf_variant)>(symbols, "gmat_phased_vcf_reader_variant");
-            backend->vcf_chromosome = symbol<decltype(backend->vcf_chromosome)>(symbols, "gmat_phased_vcf_reader_chromosome");
-            backend->vcf_start = symbol<decltype(backend->vcf_start)>(symbols, "gmat_phased_vcf_reader_start_chromosome");
-            backend->vcf_next = symbol<decltype(backend->vcf_next)>(symbols, "gmat_phased_vcf_reader_next");
-            if (backend->abi_version() != 0u) fail("gmat ABI mismatch: gsim requires experimental ABI 0");
-            const char* version = backend->library_version();
-            if (version == nullptr || version[0] == '\0') fail("gmat returned an empty library version");
-            backend->version = version;
+#define GSIM_METADATA_ASSIGN(field, function) \
+            backend->field = reinterpret_cast<decltype(backend->field)>(function)
+            GSIM_METADATA_ASSIGN(abi_version, native_metadata_abi_version);
+            GSIM_METADATA_ASSIGN(library_version, native_metadata_library_version);
+            GSIM_METADATA_ASSIGN(last_error, native_metadata_last_error);
+            GSIM_METADATA_ASSIGN(variant_create, native_metadata_variant_metadata_create);
+            GSIM_METADATA_ASSIGN(variant_close, native_metadata_variant_metadata_close);
+            GSIM_METADATA_ASSIGN(variant_read, native_metadata_variant_metadata_read_bim);
+            GSIM_METADATA_ASSIGN(variant_count, native_metadata_variant_metadata_count);
+            GSIM_METADATA_ASSIGN(variant_get, native_metadata_variant_metadata_get);
+            GSIM_METADATA_ASSIGN(variant_write, native_metadata_variant_metadata_write_bim);
+            GSIM_METADATA_ASSIGN(sample_create, native_metadata_sample_metadata_create);
+            GSIM_METADATA_ASSIGN(sample_close, native_metadata_sample_metadata_close);
+            GSIM_METADATA_ASSIGN(sample_read, native_metadata_sample_metadata_read_fam);
+            GSIM_METADATA_ASSIGN(sample_count, native_metadata_sample_metadata_count);
+            GSIM_METADATA_ASSIGN(sample_get, native_metadata_sample_metadata_get);
+            GSIM_METADATA_ASSIGN(sample_write, native_metadata_sample_metadata_write_fam);
+            GSIM_METADATA_ASSIGN(vcf_open, native_metadata_phased_vcf_reader_open);
+            GSIM_METADATA_ASSIGN(vcf_close, native_metadata_phased_vcf_reader_close);
+            GSIM_METADATA_ASSIGN(vcf_dimensions, native_metadata_phased_vcf_reader_dimensions);
+            GSIM_METADATA_ASSIGN(vcf_sample, native_metadata_phased_vcf_reader_sample);
+            GSIM_METADATA_ASSIGN(vcf_variant, native_metadata_phased_vcf_reader_variant);
+            GSIM_METADATA_ASSIGN(vcf_chromosome, native_metadata_phased_vcf_reader_chromosome);
+            GSIM_METADATA_ASSIGN(vcf_start, native_metadata_phased_vcf_reader_start_chromosome);
+            GSIM_METADATA_ASSIGN(vcf_next, native_metadata_phased_vcf_reader_next);
+#undef GSIM_METADATA_ASSIGN
+            backend->version = "gsim-native-1";
         } catch (...) {
             delete backend;
             throw;
@@ -254,7 +238,7 @@ extern "C" SEXP C_gsim_gmat_backend(SEXP symbols) {
         SEXP pointer = PROTECT(R_MakeExternalPtr(backend, R_NilValue, R_NilValue));
         R_RegisterCFinalizerEx(pointer, backend_finalizer, TRUE);
         SEXP version = PROTECT(Rf_mkString(backend->version.c_str()));
-        Rf_setAttrib(pointer, Rf_install("gmat_version"), version);
+        Rf_setAttrib(pointer, Rf_install("native_metadata_version"), version);
         UNPROTECT(2);
         return pointer;
     } catch (const std::exception& ex) {
@@ -263,7 +247,7 @@ extern "C" SEXP C_gsim_gmat_backend(SEXP symbols) {
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gmat_variant_create(SEXP backend_pointer, SEXP chromosome,
+extern "C" SEXP C_gsim_metadata_variant_create(SEXP backend_pointer, SEXP chromosome,
                                              SEXP ids, SEXP cm, SEXP bp,
                                              SEXP alt, SEXP ref) {
     try {
@@ -308,7 +292,7 @@ extern "C" SEXP C_gsim_gmat_variant_create(SEXP backend_pointer, SEXP chromosome
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gmat_sample_create(SEXP backend_pointer, SEXP family,
+extern "C" SEXP C_gsim_metadata_sample_create(SEXP backend_pointer, SEXP family,
                                             SEXP ids, SEXP paternal,
                                             SEXP maternal, SEXP sex) {
     try {
@@ -352,7 +336,7 @@ extern "C" SEXP C_gsim_gmat_sample_create(SEXP backend_pointer, SEXP family,
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gmat_write_bim(SEXP pointer, SEXP path) {
+extern "C" SEXP C_gsim_metadata_write_bim(SEXP pointer, SEXP path) {
     try {
         Metadata* metadata = require_metadata(pointer, MetadataKind::variant);
         const std::string destination = scalar_utf8(path, "BIM path");
@@ -368,7 +352,7 @@ extern "C" SEXP C_gsim_gmat_write_bim(SEXP pointer, SEXP path) {
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gmat_write_fam(SEXP pointer, SEXP path) {
+extern "C" SEXP C_gsim_metadata_write_fam(SEXP pointer, SEXP path) {
     try {
         Metadata* metadata = require_metadata(pointer, MetadataKind::sample);
         const std::string destination = scalar_utf8(path, "FAM path");
@@ -384,7 +368,7 @@ extern "C" SEXP C_gsim_gmat_write_fam(SEXP pointer, SEXP path) {
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gmat_read_bim(SEXP backend_pointer, SEXP path) {
+extern "C" SEXP C_gsim_metadata_read_bim(SEXP backend_pointer, SEXP path) {
     try {
         Backend* backend = require_backend(backend_pointer);
         const std::string source = scalar_utf8(path, "BIM path");
@@ -443,7 +427,7 @@ extern "C" SEXP C_gsim_gmat_read_bim(SEXP backend_pointer, SEXP path) {
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gmat_read_fam(SEXP backend_pointer, SEXP path) {
+extern "C" SEXP C_gsim_metadata_read_fam(SEXP backend_pointer, SEXP path) {
     try {
         Backend* backend = require_backend(backend_pointer);
         const std::string source = scalar_utf8(path, "FAM path");
@@ -494,7 +478,7 @@ extern "C" SEXP C_gsim_gmat_read_fam(SEXP backend_pointer, SEXP path) {
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gmat_vcf_open(SEXP backend_pointer, SEXP path) {
+extern "C" SEXP C_gsim_metadata_vcf_open(SEXP backend_pointer, SEXP path) {
     try {
         Backend* backend = require_backend(backend_pointer);
         const std::string source = scalar_utf8(path, "VCF path");
@@ -576,7 +560,7 @@ extern "C" SEXP C_gsim_gmat_vcf_open(SEXP backend_pointer, SEXP path) {
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gmat_vcf_start(SEXP pointer, SEXP chromosome_index) {
+extern "C" SEXP C_gsim_metadata_vcf_start(SEXP pointer, SEXP chromosome_index) {
     try {
         VcfReader* reader = require_vcf(pointer);
         if (TYPEOF(chromosome_index) != INTSXP || XLENGTH(chromosome_index) != 1 ||
@@ -594,7 +578,7 @@ extern "C" SEXP C_gsim_gmat_vcf_start(SEXP pointer, SEXP chromosome_index) {
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gmat_vcf_next(SEXP pointer) {
+extern "C" SEXP C_gsim_metadata_vcf_next(SEXP pointer) {
     try {
         VcfReader* reader = require_vcf(pointer);
         if (reader->samples > static_cast<std::uint64_t>(R_XLEN_T_MAX)) {
@@ -626,7 +610,7 @@ extern "C" SEXP C_gsim_gmat_vcf_next(SEXP pointer) {
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_gmat_vcf_close(SEXP pointer) {
+extern "C" SEXP C_gsim_metadata_vcf_close(SEXP pointer) {
     try {
         VcfReader* reader = require_vcf(pointer);
         check(reader->backend, reader->backend->vcf_close(reader->handle),

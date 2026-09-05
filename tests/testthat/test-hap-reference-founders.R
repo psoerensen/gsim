@@ -1,9 +1,9 @@
 .href_backend <- function() {
-  gsim:::.gsim_gbits_backend(Sys.getenv("GSIM_GBITS_LIBRARY"))
+  gsim:::.gsim_packed_backend()
 }
 
 .href_metadata_backend <- function() {
-  gsim:::.gsim_gmat_backend(Sys.getenv("GSIM_GMAT_LIBRARY"))
+  gsim:::.gsim_metadata_backend()
 }
 
 .href_variants <- function(label, ids, position) {
@@ -43,13 +43,13 @@
     gsim:::.gsim_plink_sample_metadata(donors))
   for (label in names(panels)) {
     panel <- panels[[label]]
-    h1 <- gsim:::.gsim_gbits_pack(backend, panel$h1)
-    h2 <- gsim:::.gsim_gbits_pack(backend, panel$h2)
+    h1 <- gsim:::.gsim_packed_pack(backend, panel$h1)
+    h2 <- gsim:::.gsim_packed_pack(backend, panel$h2)
     gsim:::.gsim_hap_dataset_append(
       dataset, label, h1, h2,
       .href_variants(label, panel$ids, panel$position))
-    gsim:::.gsim_gbits_close(h1)
-    gsim:::.gsim_gbits_close(h2)
+    gsim:::.gsim_packed_close(h1)
+    gsim:::.gsim_packed_close(h2)
   }
   gsim:::.gsim_hap_dataset_finalize(dataset)
 }
@@ -125,22 +125,22 @@ testthat::test_that("HAP-loaded packed donors exactly match both founder oracles
   permuted_args$genetic_position <- rev(permuted_args$genetic_position)
   permuted_args$mutation_age <- rev(permuted_args$mutation_age)
   permuted <- .href_simulate(reader, "Z-2", panel, permuted_args)
-  testthat::expect_identical(gsim:::.gsim_gbits_unpack(loaded$h1), raw$h1)
-  testthat::expect_identical(gsim:::.gsim_gbits_unpack(loaded$h2), raw$h2)
+  testthat::expect_identical(gsim:::.gsim_packed_unpack(loaded$h1), raw$h1)
+  testthat::expect_identical(gsim:::.gsim_packed_unpack(loaded$h2), raw$h2)
   testthat::expect_identical(loaded$genotypes, raw$genotypes)
   testthat::expect_identical(loaded$segments, raw$segments)
-  testthat::expect_identical(gsim:::.gsim_gbits_unpack(permuted$h1), raw$h1)
-  testthat::expect_identical(gsim:::.gsim_gbits_unpack(permuted$h2), raw$h2)
+  testthat::expect_identical(gsim:::.gsim_packed_unpack(permuted$h1), raw$h1)
+  testthat::expect_identical(gsim:::.gsim_packed_unpack(permuted$h2), raw$h2)
   testthat::expect_identical(permuted$segments, raw$segments)
-  testthat::expect_identical(gsim:::.gsim_gbits_unpack(loaded$h1),
-                             gsim:::.gsim_gbits_unpack(legacy$h1))
-  testthat::expect_identical(gsim:::.gsim_gbits_unpack(loaded$h2),
-                             gsim:::.gsim_gbits_unpack(legacy$h2))
+  testthat::expect_identical(gsim:::.gsim_packed_unpack(loaded$h1),
+                             gsim:::.gsim_packed_unpack(legacy$h1))
+  testthat::expect_identical(gsim:::.gsim_packed_unpack(loaded$h2),
+                             gsim:::.gsim_packed_unpack(legacy$h2))
   testthat::expect_identical(loaded$segments, legacy$segments)
   testthat::expect_identical(
     as.integer(loaded$genotypes),
-    as.integer(gsim:::.gsim_gbits_unpack(loaded$h1)) +
-      as.integer(gsim:::.gsim_gbits_unpack(loaded$h2)))
+    as.integer(gsim:::.gsim_packed_unpack(loaded$h1)) +
+      as.integer(gsim:::.gsim_packed_unpack(loaded$h2)))
   testthat::expect_identical(loaded$reference_alignment$sample_ids,
                              rownames(panel$h1))
   testthat::expect_identical(loaded$reference_alignment$variant_ids, panel$ids)
@@ -157,15 +157,15 @@ testthat::test_that("HAP-loaded packed donors exactly match both founder oracles
     backend, metadata_backend, generated_prefix)
   reloaded <- gsim:::.gsim_hap_dataset_load_chromosome(
     generated_reader, "Z-2")
-  testthat::expect_identical(gsim:::.gsim_gbits_unpack(reloaded$h1), raw$h1)
-  testthat::expect_identical(gsim:::.gsim_gbits_unpack(reloaded$h2), raw$h2)
+  testthat::expect_identical(gsim:::.gsim_packed_unpack(reloaded$h1), raw$h1)
+  testthat::expect_identical(gsim:::.gsim_packed_unpack(reloaded$h2), raw$h2)
   gsim:::.gsim_hap_dataset_close(generated_reader)
   bed <- gsim:::.gsim_bed_sink_create(
     backend, file.path(root, "generated founders.bed"), loaded$sample_ids)
   gsim:::.gsim_bed_sink_append(
     bed, "Z-2", loaded$h1, loaded$h2, loaded$variant_ids)
   bed_manifest <- gsim:::.gsim_bed_sink_finalize(bed)
-  decoded <- gsim:::.gsim_gbits_bed_read_all(
+  decoded <- gsim:::.gsim_packed_bed_read_all(
     backend, bed_manifest$path, length(loaded$sample_ids),
     length(loaded$variant_ids), loaded$sample_ids, loaded$variant_ids)
   testthat::expect_identical(
@@ -196,8 +196,8 @@ testthat::test_that("HAP-loaded copying retains strict phase specificity", {
     mutation_age = stats::setNames(panel$mutation, panel$ids),
     n = 6L, seed = 19L, chromosome = "asym")
   out <- .href_simulate(reader, "asym", panel, args)
-  testthat::expect_true(all(gsim:::.gsim_gbits_unpack(out$h1) == 0))
-  testthat::expect_true(all(gsim:::.gsim_gbits_unpack(out$h2) == 1))
+  testthat::expect_true(all(gsim:::.gsim_packed_unpack(out$h1) == 0))
+  testthat::expect_true(all(gsim:::.gsim_packed_unpack(out$h2) == 1))
   testthat::expect_identical(out$settings$donor_phase, "hapnest")
 })
 
@@ -220,10 +220,10 @@ testthat::test_that("chromosome, batching, options, and handle lifetime are inva
   })
   names(reverse) <- rev(names(panels))
   for (label in names(panels)) {
-    testthat::expect_identical(gsim:::.gsim_gbits_unpack(forward[[label]]$h1),
-                               gsim:::.gsim_gbits_unpack(reverse[[label]]$h1))
-    testthat::expect_identical(gsim:::.gsim_gbits_unpack(forward[[label]]$h2),
-                               gsim:::.gsim_gbits_unpack(reverse[[label]]$h2))
+    testthat::expect_identical(gsim:::.gsim_packed_unpack(forward[[label]]$h1),
+                               gsim:::.gsim_packed_unpack(reverse[[label]]$h1))
+    testthat::expect_identical(gsim:::.gsim_packed_unpack(forward[[label]]$h2),
+                               gsim:::.gsim_packed_unpack(reverse[[label]]$h2))
     testthat::expect_identical(forward[[label]]$segments,
                                reverse[[label]]$segments)
   }
@@ -233,8 +233,8 @@ testthat::test_that("chromosome, batching, options, and handle lifetime are inva
   alone <- .href_simulate(one_reader, "01", panels[["01"]],
                           .href_args(panels[["01"]], "01"))
   gsim:::.gsim_hap_dataset_close(one_reader)
-  testthat::expect_identical(gsim:::.gsim_gbits_unpack(alone$h1),
-                             gsim:::.gsim_gbits_unpack(forward[["01"]]$h1))
+  testthat::expect_identical(gsim:::.gsim_packed_unpack(alone$h1),
+                             gsim:::.gsim_packed_unpack(forward[["01"]]$h1))
   testthat::expect_identical(alone$segments, forward[["01"]]$segments)
 
   panel <- panels[["Z-2"]]
@@ -245,9 +245,9 @@ testthat::test_that("chromosome, batching, options, and handle lifetime are inva
                            .href_args(panel, "Z-2", n = 5L,
                                       individual_offset = 3L))
   testthat::expect_identical(
-    rbind(gsim:::.gsim_gbits_unpack(first$h1),
-          gsim:::.gsim_gbits_unpack(second$h1)),
-    gsim:::.gsim_gbits_unpack(full$h1))
+    rbind(gsim:::.gsim_packed_unpack(first$h1),
+          gsim:::.gsim_packed_unpack(second$h1)),
+    gsim:::.gsim_packed_unpack(full$h1))
   segments <- rbind(first$segments, second$segments)
   rownames(segments) <- NULL
   expected_segments <- full$segments
@@ -256,16 +256,16 @@ testthat::test_that("chromosome, batching, options, and handle lifetime are inva
   without_outputs <- .href_simulate(
     reader, "Z-2", panel, .href_args(panel, "Z-2"),
     return_genotypes = FALSE, return_segments = FALSE)
-  testthat::expect_identical(gsim:::.gsim_gbits_unpack(without_outputs$h1),
-                             gsim:::.gsim_gbits_unpack(full$h1))
+  testthat::expect_identical(gsim:::.gsim_packed_unpack(without_outputs$h1),
+                             gsim:::.gsim_packed_unpack(full$h1))
   testthat::expect_null(without_outputs$genotypes)
   testthat::expect_null(without_outputs$segments)
   changed_seed <- .href_simulate(
     reader, "Z-2", panel, .href_args(panel, "Z-2", seed = 718L),
     return_genotypes = FALSE)
   testthat::expect_false(identical(
-    gsim:::.gsim_gbits_unpack(changed_seed$h1),
-    gsim:::.gsim_gbits_unpack(full$h1)))
+    gsim:::.gsim_packed_unpack(changed_seed$h1),
+    gsim:::.gsim_packed_unpack(full$h1)))
   set.seed(41)
   expected_rng <- runif(5)
   set.seed(41)
@@ -278,12 +278,12 @@ testthat::test_that("chromosome, batching, options, and handle lifetime are inva
   after_close <- do.call(gsim:::.gsim_hapnest_founders_packed_reference_chromosome,
     c(list(backend = backend, reference_h1 = owned$h1, reference_h2 = owned$h2),
       .href_args(panels$chrA, "chrA")))
-  testthat::expect_identical(gsim:::.gsim_gbits_unpack(after_close$h1),
-                             gsim:::.gsim_gbits_unpack(forward$chrA$h1))
-  gsim:::.gsim_gbits_close(owned$h1)
-  gsim:::.gsim_gbits_close(owned$h2)
-  testthat::expect_error(gsim:::.gsim_gbits_info(owned$h1), "released")
-  testthat::expect_error(gsim:::.gsim_gbits_close(owned$h1), "released")
+  testthat::expect_identical(gsim:::.gsim_packed_unpack(after_close$h1),
+                             gsim:::.gsim_packed_unpack(forward$chrA$h1))
+  gsim:::.gsim_packed_close(owned$h1)
+  gsim:::.gsim_packed_close(owned$h2)
+  testthat::expect_error(gsim:::.gsim_packed_info(owned$h1), "released")
+  testthat::expect_error(gsim:::.gsim_packed_close(owned$h1), "released")
 })
 
 testthat::test_that("reference alignment validation rejects ambiguity", {
@@ -333,14 +333,14 @@ testthat::test_that("reference alignment validation rejects ambiguity", {
   loaded <- gsim:::.gsim_hap_dataset_load_chromosome(reader, "chrA")
   wrong <- matrix(0, 4L, 8L,
                   dimnames = list(rownames(panel$h1), panel$ids[-1L]))
-  wrong_h2 <- gsim:::.gsim_gbits_pack(backend, wrong)
+  wrong_h2 <- gsim:::.gsim_packed_pack(backend, wrong)
   testthat::expect_error(do.call(
     gsim:::.gsim_hapnest_founders_packed_reference_chromosome,
     c(list(backend = backend, reference_h1 = loaded$h1, reference_h2 = wrong_h2),
       args)), "dimensions")
-  gsim:::.gsim_gbits_close(wrong_h2)
-  gsim:::.gsim_gbits_close(loaded$h1)
-  gsim:::.gsim_gbits_close(loaded$h2)
+  gsim:::.gsim_packed_close(wrong_h2)
+  gsim:::.gsim_packed_close(loaded$h1)
+  gsim:::.gsim_packed_close(loaded$h2)
 })
 
 testthat::test_that("generated packed founders flow directly through pedigree, HAP, and BED", {
@@ -381,8 +381,8 @@ testthat::test_that("generated packed founders flow directly through pedigree, H
   raw <- do.call(gsim:::.gsim_pedigree_genotypes, c(
     list(founder_haplotypes = list(h1 = raw_founders$h1,
                                    h2 = raw_founders$h2)), meiosis_args))
-  packed_h1 <- gsim:::.gsim_gbits_unpack(packed$h1)
-  packed_h2 <- gsim:::.gsim_gbits_unpack(packed$h2)
+  packed_h1 <- gsim:::.gsim_packed_unpack(packed$h1)
+  packed_h2 <- gsim:::.gsim_packed_unpack(packed$h2)
   testthat::expect_identical(packed_h1, raw$h1)
   testthat::expect_identical(packed_h2, raw$h2)
   testthat::expect_identical(packed$genotypes, raw$genotypes)
@@ -401,8 +401,8 @@ testthat::test_that("generated packed founders flow directly through pedigree, H
   reread <- gsim:::.gsim_hap_dataset_open(
     backend, metadata_backend, generated_prefix)
   loaded <- gsim:::.gsim_hap_dataset_load_chromosome(reread, "chrP")
-  testthat::expect_identical(gsim:::.gsim_gbits_unpack(loaded$h1), raw$h1)
-  testthat::expect_identical(gsim:::.gsim_gbits_unpack(loaded$h2), raw$h2)
+  testthat::expect_identical(gsim:::.gsim_packed_unpack(loaded$h1), raw$h1)
+  testthat::expect_identical(gsim:::.gsim_packed_unpack(loaded$h2), raw$h2)
   gsim:::.gsim_hap_dataset_close(reread)
 
   bed <- gsim:::.gsim_bed_sink_create(
@@ -410,7 +410,7 @@ testthat::test_that("generated packed founders flow directly through pedigree, H
   gsim:::.gsim_bed_sink_append(
     bed, "chrP", packed$h1, packed$h2, packed$variant_ids)
   bed_manifest <- gsim:::.gsim_bed_sink_finalize(bed)
-  decoded <- gsim:::.gsim_gbits_bed_read_all(
+  decoded <- gsim:::.gsim_packed_bed_read_all(
     backend, bed_manifest$path, length(packed$sample_ids),
     length(packed$variant_ids), packed$sample_ids, packed$variant_ids)
   testthat::expect_identical(
