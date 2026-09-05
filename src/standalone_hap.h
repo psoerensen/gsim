@@ -37,6 +37,10 @@ public:
 
     void append(const PhasedHaplotypeMatrix& h1,
                 const PhasedHaplotypeMatrix& h2);
+    void begin_chromosome(std::uint64_t marker_count);
+    void write_batch(const PhasedHaplotypeMatrix& h1,
+                     const PhasedHaplotypeMatrix& h2,
+                     std::uint64_t individual_offset);
     void finalize();
 
     std::uint64_t individual_count() const noexcept { return individual_count_; }
@@ -68,6 +72,8 @@ private:
     bool overwrite_;
     HapSinkState state_;
     std::vector<HapChromosomeInfo> chromosomes_;
+    bool chromosome_open_;
+    std::uint64_t next_individual_;
 };
 
 class PhasedHapReader final {

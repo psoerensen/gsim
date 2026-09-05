@@ -213,11 +213,9 @@ and 95.43% of VCF records were outside the requested interval. This matters most
 for repeated regional imports; users who convert a whole reference once and
 reuse HAP already avoid that cost.
 
-The secondary later option is to consolidate or batch packed founder segment
-application across the native boundary before considering threading or SIMD.
-Only 0.13 seconds was event planning, while the combined materialization stage
-took 18.86 seconds on its first run. More precise native-side attribution should
-precede selecting threading versus packed-copy optimization.
+The subsequent 0.11 milestone implemented the recommended consolidation,
+word-aligned batching, and deterministic founder threading. Its prepared-HAP
+measurement is recorded in `parallel_founder_benchmark_chr22.md`.
 
 Faster BGZF decompression cannot be distinguished from parsing with the current
 coarse profile. HAP memory mapping is low priority because chromosome-local

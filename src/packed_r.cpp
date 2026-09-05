@@ -46,6 +46,12 @@ struct Backend {
     status_t (*copy_filtered)(handle_t*, std::uint64_t, const handle_t*,
                               std::uint64_t, std::uint64_t, std::uint64_t,
                               double, const double*, std::uint64_t);
+    status_t (*materialize_founders)(
+        handle_t*, handle_t*, const handle_t*, const handle_t*,
+        const std::uint64_t*, const std::uint32_t*, const std::uint64_t*,
+        const std::uint64_t*, const std::uint64_t*, const double*,
+        std::uint64_t, const double*, std::uint64_t, std::uint32_t,
+        std::uint64_t*, std::uint64_t*);
     status_t (*make_gamete)(handle_t*, std::uint64_t, const handle_t*,
                             const handle_t*, std::uint64_t, std::uint32_t,
                             const std::uint64_t*, std::uint64_t);
@@ -65,6 +71,9 @@ struct Backend {
     status_t (*hap_sink_create)(const char*, std::uint64_t, std::uint32_t,
                                 handle_t**);
     status_t (*hap_sink_append)(handle_t*, const handle_t*, const handle_t*);
+    status_t (*hap_sink_begin)(handle_t*, std::uint64_t);
+    status_t (*hap_sink_write_batch)(handle_t*, const handle_t*,
+                                     const handle_t*, std::uint64_t);
     status_t (*hap_sink_finalize)(handle_t*);
     status_t (*hap_sink_info)(const handle_t*, HapSinkInfo*);
     status_t (*hap_sink_close)(handle_t*);
@@ -290,6 +299,7 @@ extern "C" SEXP C_gsim_packed_backend() {
             backend->unpack = api::unpack;
             backend->copy_interval = api::copy_interval;
             backend->copy_filtered = api::copy_filtered;
+            backend->materialize_founders = api::materialize_founders;
             backend->make_gamete = api::make_gamete;
             backend->decode_genotypes = api::decode_genotypes;
             backend->bed_open = api::bed_open;
@@ -302,6 +312,8 @@ extern "C" SEXP C_gsim_packed_backend() {
             backend->bed_sink_close = api::bed_sink_close;
             backend->hap_sink_create = api::hap_sink_create;
             backend->hap_sink_append = api::hap_sink_append;
+            backend->hap_sink_begin = api::hap_sink_begin;
+            backend->hap_sink_write_batch = api::hap_sink_write_batch;
             backend->hap_sink_finalize = api::hap_sink_finalize;
             backend->hap_sink_info = api::hap_sink_info;
             backend->hap_sink_close = api::hap_sink_close;
@@ -623,6 +635,120 @@ extern "C" SEXP C_gsim_packed_copy_filtered_counts(
     return R_NilValue;
 }
 
+extern "C" SEXP C_gsim_packed_materialize_founders(
+    SEXP destination_h1_pointer, SEXP destination_h2_pointer,
+    SEXP reference_h1_pointer, SEXP reference_h2_pointer,
+    SEXP individuals, SEXP phases, SEXP donors, SEXP starts, SEXP ends,
+    SEXP ages, SEXP mutation_age, SEXP individual_offset_sexp,
+    SEXP threads_sexp, SEXP return_counts_sexp) {
+    try {
+        Packed* destination_h1 = require_packed(destination_h1_pointer);
+        Packed* destination_h2 = require_packed(destination_h2_pointer);
+        Packed* reference_h1 = require_packed(reference_h1_pointer);
+        Packed* reference_h2 = require_packed(reference_h2_pointer);
+        require_same_backend(destination_h1, destination_h2);
+        require_same_backend(destination_h1, reference_h1);
+        require_same_backend(destination_h1, reference_h2);
+        if ((TYPEOF(individuals) != INTSXP && TYPEOF(individuals) != REALSXP) ||
+            TYPEOF(phases) != INTSXP ||
+            TYPEOF(donors) != INTSXP || TYPEOF(starts) != INTSXP ||
+            TYPEOF(ends) != INTSXP || TYPEOF(ages) != REALSXP ||
+            TYPEOF(mutation_age) != REALSXP) {
+            fail("founder event columns have invalid storage types");
+        }
+        const R_xlen_t count = XLENGTH(individuals);
+        if (XLENGTH(phases) != count || XLENGTH(donors) != count ||
+            XLENGTH(starts) != count || XLENGTH(ends) != count ||
+            XLENGTH(ages) != count) {
+            fail("founder event columns have inconsistent lengths");
+        }
+        const int offset = scalar_int(individual_offset_sexp,
+                                      "individual_offset");
+        const int threads = scalar_int(threads_sexp, "threads", 1);
+        const bool return_counts = scalar_bool(return_counts_sexp,
+                                               "return_counts");
+        std::vector<std::uint64_t> destination(static_cast<std::size_t>(count));
+        std::vector<std::uint32_t> phase(static_cast<std::size_t>(count));
+        std::vector<std::uint64_t> donor(static_cast<std::size_t>(count));
+        std::vector<std::uint64_t> first(static_cast<std::size_t>(count));
+        std::vector<std::uint64_t> last(static_cast<std::size_t>(count));
+        for (R_xlen_t i = 0; i < count; ++i) {
+            const double individual_value = TYPEOF(individuals) == INTSXP
+                ? static_cast<double>(INTEGER(individuals)[i])
+                : REAL(individuals)[i];
+            const int phase_value = INTEGER(phases)[i];
+            const int donor_value = INTEGER(donors)[i];
+            const int first_value = INTEGER(starts)[i];
+            const int last_value = INTEGER(ends)[i];
+            if (!R_FINITE(individual_value) ||
+                individual_value != std::floor(individual_value) ||
+                individual_value <= static_cast<double>(offset) ||
+                individual_value > static_cast<double>(std::numeric_limits<int>::max()) ||
+                phase_value < 1 || phase_value > 2 ||
+                donor_value == NA_INTEGER || donor_value < 1 ||
+                first_value == NA_INTEGER || first_value < 1 ||
+                last_value == NA_INTEGER || last_value < first_value) {
+                fail("founder event plan contains an invalid index");
+            }
+            destination[static_cast<std::size_t>(i)] =
+                static_cast<std::uint64_t>(individual_value) -
+                static_cast<std::uint64_t>(offset) - 1u;
+            phase[static_cast<std::size_t>(i)] =
+                static_cast<std::uint32_t>(phase_value - 1);
+            donor[static_cast<std::size_t>(i)] =
+                static_cast<std::uint64_t>(donor_value - 1);
+            first[static_cast<std::size_t>(i)] =
+                static_cast<std::uint64_t>(first_value - 1);
+            last[static_cast<std::size_t>(i)] =
+                static_cast<std::uint64_t>(last_value - 1);
+        }
+        std::vector<std::uint64_t> copied;
+        std::vector<std::uint64_t> retained;
+        if (return_counts) {
+            copied.resize(static_cast<std::size_t>(count));
+            retained.resize(static_cast<std::size_t>(count));
+        }
+        check(destination_h1->backend,
+              destination_h1->backend->materialize_founders(
+                  destination_h1->handle, destination_h2->handle,
+                  reference_h1->handle, reference_h2->handle,
+                  destination.empty() ? nullptr : destination.data(),
+                  phase.empty() ? nullptr : phase.data(),
+                  donor.empty() ? nullptr : donor.data(),
+                  first.empty() ? nullptr : first.data(),
+                  last.empty() ? nullptr : last.data(), REAL(ages),
+                  static_cast<std::uint64_t>(count), REAL(mutation_age),
+                  static_cast<std::uint64_t>(XLENGTH(mutation_age)),
+                  static_cast<std::uint32_t>(threads),
+                  return_counts ? copied.data() : nullptr,
+                  return_counts ? retained.data() : nullptr),
+              "native founder batch materialization");
+        if (!return_counts) return R_NilValue;
+        SEXP first_counts = PROTECT(Rf_allocVector(INTSXP, count));
+        SEXP second_counts = PROTECT(Rf_allocVector(INTSXP, count));
+        for (R_xlen_t i = 0; i < count; ++i) {
+            if (copied[static_cast<std::size_t>(i)] >
+                    static_cast<std::uint64_t>(std::numeric_limits<int>::max()) ||
+                retained[static_cast<std::size_t>(i)] >
+                    static_cast<std::uint64_t>(std::numeric_limits<int>::max())) {
+                UNPROTECT(2);
+                fail("founder audit count exceeds R integer range");
+            }
+            INTEGER(first_counts)[i] = static_cast<int>(copied[static_cast<std::size_t>(i)]);
+            INTEGER(second_counts)[i] = static_cast<int>(retained[static_cast<std::size_t>(i)]);
+        }
+        SEXP out = PROTECT(Rf_allocVector(VECSXP, 2));
+        SET_VECTOR_ELT(out, 0, first_counts);
+        SET_VECTOR_ELT(out, 1, second_counts);
+        set_names(out, {"copied_alternative", "retained_alternative"});
+        UNPROTECT(3);
+        return out;
+    } catch (const std::exception& ex) {
+        Rf_error("native founder batch materialization: %s", ex.what());
+    }
+    return R_NilValue;
+}
+
 extern "C" SEXP C_gsim_packed_make_gamete(
     SEXP destination_pointer, SEXP destination_individual_sexp,
     SEXP parent_h1_pointer, SEXP parent_h2_pointer,
@@ -846,6 +972,43 @@ extern "C" SEXP C_gsim_packed_hap_sink_append(
         return sink_pointer;
     } catch (const std::exception& ex) {
         Rf_error("gbits HAP append: %s", ex.what());
+    }
+    return R_NilValue;
+}
+
+extern "C" SEXP C_gsim_packed_hap_sink_begin(
+    SEXP sink_pointer, SEXP marker_count_sexp) {
+    try {
+        HapSink* sink = require_hap_sink(sink_pointer);
+        const int marker_count = scalar_int(marker_count_sexp, "marker_count", 1);
+        check(sink->backend, sink->backend->hap_sink_begin(
+              sink->handle, static_cast<std::uint64_t>(marker_count)),
+              "HAP chromosome batch begin");
+        return sink_pointer;
+    } catch (const std::exception& ex) {
+        Rf_error("HAP chromosome batch begin: %s", ex.what());
+    }
+    return R_NilValue;
+}
+
+extern "C" SEXP C_gsim_packed_hap_sink_write_batch(
+    SEXP sink_pointer, SEXP h1_pointer, SEXP h2_pointer,
+    SEXP individual_offset_sexp) {
+    try {
+        HapSink* sink = require_hap_sink(sink_pointer);
+        Packed* h1 = require_packed(h1_pointer);
+        Packed* h2 = require_packed(h2_pointer);
+        if (sink->backend != h1->backend || sink->backend != h2->backend) {
+            fail("HAP sink and packed batch phases originate from different backends");
+        }
+        const int offset = scalar_int(individual_offset_sexp,
+                                      "individual_offset");
+        check(sink->backend, sink->backend->hap_sink_write_batch(
+              sink->handle, h1->handle, h2->handle,
+              static_cast<std::uint64_t>(offset)), "HAP packed batch write");
+        return sink_pointer;
+    } catch (const std::exception& ex) {
+        Rf_error("HAP packed batch write: %s", ex.what());
     }
     return R_NilValue;
 }

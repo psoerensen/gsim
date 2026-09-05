@@ -92,6 +92,66 @@
   invisible(sink)
 }
 
+.gsim_hap_sink_begin_chromosome <- function(sink, chromosome, marker_count,
+                                             variant_ids) {
+  if (!inherits(sink, "gsim_hap_sink") || !is.environment(sink) ||
+      is.null(sink$pointer) || sink$finalized || sink$cancelled) {
+    .gsim_stop("sink is not an open experimental HAP sink.")
+  }
+  chromosome <- enc2utf8(as.character(chromosome))
+  marker_count <- .gsim_hapnest_integer_scalar(
+    marker_count, "marker_count", 1
+  )
+  variant_ids <- enc2utf8(as.character(variant_ids))
+  if (length(chromosome) != 1L || is.na(chromosome) || !nzchar(chromosome) ||
+      chromosome %in% sink$chromosome) {
+    .gsim_stop("chromosome must be one new nonempty exact label.")
+  }
+  if (length(variant_ids) != marker_count || anyNA(variant_ids) ||
+      any(!nzchar(variant_ids)) || anyDuplicated(variant_ids) ||
+      any(variant_ids %in% sink$variant_ids)) {
+    .gsim_stop("variant_ids must be globally unique and match marker_count.")
+  }
+  invisible(.Call(C_gsim_packed_hap_sink_begin, sink$pointer,
+                  as.integer(marker_count)))
+  sink$chromosome <- c(sink$chromosome, chromosome)
+  sink$marker_count <- c(sink$marker_count, marker_count)
+  sink$variant_ids <- c(sink$variant_ids, variant_ids)
+  invisible(sink)
+}
+
+.gsim_hap_sink_write_batch <- function(sink, h1, h2, individual_offset) {
+  if (!inherits(sink, "gsim_hap_sink") || !is.environment(sink) ||
+      is.null(sink$pointer) || sink$finalized || sink$cancelled) {
+    .gsim_stop("sink is not an open experimental HAP sink.")
+  }
+  individual_offset <- .gsim_hapnest_integer_scalar(
+    individual_offset, "individual_offset", 0
+  )
+  info1 <- .gsim_packed_info(h1)
+  info2 <- .gsim_packed_info(h2)
+  if (!identical(unname(info1[1:2]), unname(info2[1:2]))) {
+    .gsim_stop("Packed batch H1/H2 dimensions must be identical.")
+  }
+  count <- as.integer(info1[[1L]])
+  rows <- individual_offset + seq_len(count)
+  if (max(rows) > length(sink$sample_ids) ||
+      !identical(attr(h1, "sample_ids", exact = TRUE), sink$sample_ids[rows]) ||
+      !identical(attr(h2, "sample_ids", exact = TRUE), sink$sample_ids[rows])) {
+    .gsim_stop("Packed batch sample IDs must match their exact final HAP range.")
+  }
+  current_count <- utils::tail(sink$marker_count, 1L)
+  current_ids <- utils::tail(sink$variant_ids, current_count)
+  if (as.integer(info1[[2L]]) != current_count ||
+      !identical(attr(h1, "variant_ids", exact = TRUE), current_ids) ||
+      !identical(attr(h2, "variant_ids", exact = TRUE), current_ids)) {
+    .gsim_stop("Packed batch variants must match the active HAP chromosome.")
+  }
+  invisible(.Call(C_gsim_packed_hap_sink_write_batch, sink$pointer, h1, h2,
+                  as.integer(individual_offset)))
+  invisible(sink)
+}
+
 .gsim_hap_sink_info <- function(sink) {
   if (!inherits(sink, "gsim_hap_sink") || is.null(sink$pointer)) {
     .gsim_stop("sink is not a valid experimental HAP sink.")
@@ -187,6 +247,33 @@
   invisible(.gsim_metadata_variant_pointer(dataset$metadata_backend, metadata))
   .gsim_hap_sink_append(dataset$hap, chromosome, h1, h2, metadata$variant_id)
   dataset$variant_metadata[[length(dataset$variant_metadata) + 1L]] <- metadata
+  invisible(dataset)
+}
+
+.gsim_hap_dataset_begin_chromosome <- function(dataset, chromosome,
+                                                variant_metadata) {
+  if (!inherits(dataset, "gsim_hap_dataset") || !is.environment(dataset) ||
+      is.null(dataset$hap) || dataset$finalized || dataset$cancelled ||
+      dataset$failed) {
+    .gsim_stop("dataset is not an open experimental phased dataset sink.")
+  }
+  metadata <- .gsim_plink_normalize_variants(chromosome, variant_metadata)
+  invisible(.gsim_metadata_variant_pointer(dataset$metadata_backend, metadata))
+  .gsim_hap_sink_begin_chromosome(
+    dataset$hap, chromosome, nrow(metadata), metadata$variant_id
+  )
+  dataset$variant_metadata[[length(dataset$variant_metadata) + 1L]] <- metadata
+  invisible(dataset)
+}
+
+.gsim_hap_dataset_write_batch <- function(dataset, h1, h2,
+                                           individual_offset) {
+  if (!inherits(dataset, "gsim_hap_dataset") || !is.environment(dataset) ||
+      is.null(dataset$hap) || dataset$finalized || dataset$cancelled ||
+      dataset$failed) {
+    .gsim_stop("dataset is not an open experimental phased dataset sink.")
+  }
+  .gsim_hap_sink_write_batch(dataset$hap, h1, h2, individual_offset)
   invisible(dataset)
 }
 
@@ -394,7 +481,8 @@
 .gsim_hapnest_founders_from_hap_chromosome <- function(
   dataset, chromosome, donor_population, ancestry_weights, N, Ne, rho,
   genetic_position, mutation_age, n, seed, donor_phase = "hapnest",
-  return_genotypes = FALSE, return_segments = TRUE, individual_offset = 0L
+  return_genotypes = FALSE, return_segments = TRUE, individual_offset = 0L,
+  threads = 1L
 ) {
   if (!inherits(dataset, "gsim_hap_dataset_reader") || dataset$closed) {
     .gsim_stop("dataset must be an open validated HAP/BIM/FAM reference reader.")
@@ -436,7 +524,7 @@
     dataset$backend, loaded$h1, loaded$h2, donor_population,
     ancestry_weights, N, Ne, rho, genetic_position, mutation_age, n, seed,
     chromosome, donor_phase, return_genotypes, return_segments,
-    individual_offset)
+    individual_offset, threads)
   out$settings$reference_source <- "HAP v1 chromosome handles"
   out$settings$reference_paths <- dataset$paths
   out$reference_alignment <- list(

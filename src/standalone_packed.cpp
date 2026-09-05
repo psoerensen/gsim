@@ -229,6 +229,21 @@ void PhasedHaplotypeMatrix::copy_filtered_segment(
     double coalescent_age,
     const double* mutation_age,
     std::uint64_t mutation_age_count) {
+    (void)copy_filtered_segment_counts(
+        destination_individual, source, source_individual, first_marker,
+        last_marker, coalescent_age, mutation_age, mutation_age_count);
+}
+
+std::pair<std::uint64_t, std::uint64_t>
+PhasedHaplotypeMatrix::copy_filtered_segment_counts(
+    std::uint64_t destination_individual,
+    const PhasedHaplotypeMatrix& source,
+    std::uint64_t source_individual,
+    std::uint64_t first_marker,
+    std::uint64_t last_marker,
+    double coalescent_age,
+    const double* mutation_age,
+    std::uint64_t mutation_age_count) {
     if (mutation_age == nullptr || mutation_age_count != markers_) {
         invalid_argument("mutation ages must exactly match marker count");
     }
@@ -248,15 +263,22 @@ void PhasedHaplotypeMatrix::copy_filtered_segment(
         }
         if (marker == last_marker) break;
     }
+    std::uint64_t copied = 0u;
+    std::uint64_t retained_count = 0u;
     for (std::uint64_t marker = first_marker;; ++marker) {
+        const std::uint8_t source_allele =
+            source.allele(source_individual, marker);
         const std::uint8_t retained =
-            source.allele(source_individual, marker) == 1u &&
+            source_allele == 1u &&
                     coalescent_age < mutation_age[static_cast<std::size_t>(marker)]
                 ? std::uint8_t{1}
                 : std::uint8_t{0};
         set_allele(destination_individual, marker, retained);
+        copied += source_allele;
+        retained_count += retained;
         if (marker == last_marker) break;
     }
+    return {copied, retained_count};
 }
 
 void PhasedHaplotypeMatrix::make_gamete(

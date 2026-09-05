@@ -64,10 +64,11 @@ reduction is exactly eightfold.  Handles and vectors add small fixed headers;
 the final word is the only alignment padding.  Optional decoded genotype
 counts use `I * M_c` additional bytes and are not allocated by default.
 
-Founder reference storage is `O(R M_c / 8)`, generated storage is
-`O(I M_c / 8)`, and event storage is `O(S)`, where `R` is reference-individual
-count and `S` is copied-segment count.  Scalar materialization is `O(I M_c +
-S)` allele visits.  Pedigree storage is `O(I M_c / 8)`, event storage is
+Founder reference storage plus generated working storage is
+`O((R + B) M_c / 8 + S_B)`, where `B` and `S_B` are the current word-aligned
+batch and its copied segments. The final on-disk HAP payload remains
+`2 I M / 8` apart from word padding and format headers. Materialization is
+`O(I M_c + S)` allele visits. Pedigree storage is `O(I M_c / 8)`, event storage is
 `O(I + C)`, and materialization is `O(I M_c + C)`, where `C` is crossover
 count.  No normal operation unpacks, allocates per marker, or retains another
 chromosome.  A caller can consume and release a chromosome's handles before
@@ -75,5 +76,13 @@ requesting the next chromosome.
 
 ## Deferred work
 
-BGZF/BCF, missing or multiallelic alleles, compression, memory mapping,
-threading, SIMD, and phenotype integration remain outside this path.
+Founder batches are applied in one native call each. Requested batch sizes are
+rounded up to 64-sample word boundaries, with a partial final batch. Static
+workers own disjoint destination words, producing exact 1/2/4/8-thread output.
+Pedigree meiosis remains sequential: arbitrary parent-before-offspring order can
+place immutable parents and mutable children in the same packed word, making a
+portable race-free generation parallelization a larger storage redesign.
+
+BGZF/BCF, missing or multiallelic alleles, HAP compression or memory mapping,
+pedigree-parallel storage redesign, SIMD, and phenotype integration remain
+outside this path.

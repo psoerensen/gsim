@@ -59,16 +59,21 @@ testthat::test_that("public VCF to founder, pedigree, HAP, and BED is exact", {
   mutation <- stats::setNames(c(1e9, 1e9, 0, 1e9, 1e9, 1e9, 0, 1e9),
                               reference$variant_ids)
   pedigree <- .public_pedigree()
-  common <- list(
-    reference = reference, pedigree = pedigree, populations = populations,
+  founder_common <- list(
+    reference = reference, founder_ids = pedigree$canonical_order[1:5],
+    populations = populations,
     ancestry_weights = c(P1 = 0.4, P2 = 0.6), mutation_age = mutation,
     N = c(P1 = 2, P2 = 2), Ne = c(P1 = 4, P2 = 6),
     rho = c(P1 = 0.02, P2 = 0.03), seed = 717
   )
-  hap <- do.call(gsim_simulate, c(common, list(
-    output = file.path(root, "simulation-hap"), format = "hap")))
-  bed <- do.call(gsim_simulate, c(common, list(
-    output = file.path(root, "simulation-bed"), format = "bed")))
+  base <- do.call(gsim_simulate_founders, c(founder_common, list(
+    output = file.path(root, "base"), batch_size = 3L, threads = 2L)))
+  hap <- gsim_simulate_pedigree(
+    base, pedigree, 717, file.path(root, "simulation-hap"), "hap"
+  )
+  bed <- gsim_simulate_pedigree(
+    base, pedigree, 717, file.path(root, "simulation-bed"), "bed"
+  )
   testthat::expect_identical(.Random.seed, global_before)
   testthat::expect_identical(hap$sample_ids, pedigree$canonical_order)
   testthat::expect_identical(hap$variant_ids, reference$variant_ids)
@@ -126,10 +131,13 @@ testthat::test_that("public VCF to founder, pedigree, HAP, and BED is exact", {
   .public_vcf_write(reverse_vcf, c(records[5:8], records[1:4]), samples)
   reverse_reference <- gsim_import_vcf(
     reverse_vcf, map, file.path(root, "reference-reverse"))
-  reverse_common <- common
+  reverse_common <- founder_common
   reverse_common$reference <- reverse_reference
-  reverse_hap <- do.call(gsim_simulate, c(reverse_common, list(
-    output = file.path(root, "simulation-reverse"), format = "hap")))
+  reverse_base <- do.call(gsim_simulate_founders, c(reverse_common, list(
+    output = file.path(root, "base-reverse"))))
+  reverse_hap <- gsim_simulate_pedigree(
+    reverse_base, pedigree, 717, file.path(root, "simulation-reverse"), "hap"
+  )
   reverse_reader <- gsim:::.gsim_hap_dataset_open(
     gbits, gmat, file.path(root, "simulation-reverse"))
   for (chromosome in c("B", "A")) {
@@ -151,11 +159,14 @@ testthat::test_that("public VCF to founder, pedigree, HAP, and BED is exact", {
   .public_vcf_write(single_vcf, records[1:4], samples)
   single_reference <- gsim_import_vcf(
     single_vcf, map[map$chromosome == "B", ], file.path(root, "reference-single"))
-  single_common <- common
+  single_common <- founder_common
   single_common$reference <- single_reference
   single_common$mutation_age <- mutation[paste0("b", 1:4)]
-  single_hap <- do.call(gsim_simulate, c(single_common, list(
-    output = file.path(root, "simulation-single"), format = "hap")))
+  single_base <- do.call(gsim_simulate_founders, c(single_common, list(
+    output = file.path(root, "base-single"))))
+  single_hap <- gsim_simulate_pedigree(
+    single_base, pedigree, 717, file.path(root, "simulation-single"), "hap"
+  )
   single_reader <- gsim:::.gsim_hap_dataset_open(
     gbits, gmat, file.path(root, "simulation-single"))
   collection_b <- gsim:::.gsim_hap_dataset_load_chromosome(output, "B")
@@ -172,14 +183,20 @@ testthat::test_that("public VCF to founder, pedigree, HAP, and BED is exact", {
   gsim:::.gsim_hap_dataset_close(output)
   gsim:::.gsim_hap_dataset_close(reference_reader)
 
-  repeat_hap <- do.call(gsim_simulate, c(common, list(
-    output = file.path(root, "simulation-repeat"), format = "hap")))
+  repeat_base <- do.call(gsim_simulate_founders, c(founder_common, list(
+    output = file.path(root, "base-repeat"))))
+  repeat_hap <- gsim_simulate_pedigree(
+    repeat_base, pedigree, 717, file.path(root, "simulation-repeat"), "hap"
+  )
   testthat::expect_identical(readBin(hap$paths[["hap"]], "raw", 100000),
                              readBin(repeat_hap$paths[["hap"]], "raw", 100000))
-  changed <- common
+  changed <- founder_common
   changed$seed <- 718
-  changed_hap <- do.call(gsim_simulate, c(changed, list(
-    output = file.path(root, "simulation-changed"), format = "hap")))
+  changed_base <- do.call(gsim_simulate_founders, c(changed, list(
+    output = file.path(root, "base-changed"))))
+  changed_hap <- gsim_simulate_pedigree(
+    changed_base, pedigree, 718, file.path(root, "simulation-changed"), "hap"
+  )
   testthat::expect_false(identical(readBin(hap$paths[["hap"]], "raw", 100000),
                                    readBin(changed_hap$paths[["hap"]], "raw", 100000)))
 })

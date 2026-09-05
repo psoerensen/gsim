@@ -29,6 +29,9 @@ extern SEXP C_gsim_packed_copy_filtered(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP,
                                        SEXP, SEXP);
 extern SEXP C_gsim_packed_copy_filtered_counts(SEXP, SEXP, SEXP, SEXP, SEXP,
                                               SEXP, SEXP, SEXP);
+extern SEXP C_gsim_packed_materialize_founders(SEXP, SEXP, SEXP, SEXP, SEXP,
+                                               SEXP, SEXP, SEXP, SEXP, SEXP,
+                                               SEXP, SEXP, SEXP, SEXP);
 extern SEXP C_gsim_packed_make_gamete(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP,
                                      SEXP);
 extern SEXP C_gsim_packed_decode_genotypes(SEXP, SEXP);
@@ -39,6 +42,8 @@ extern SEXP C_gsim_packed_bed_sink_cancel(SEXP);
 extern SEXP C_gsim_packed_bed_sink_info(SEXP);
 extern SEXP C_gsim_packed_hap_sink_create(SEXP, SEXP, SEXP, SEXP);
 extern SEXP C_gsim_packed_hap_sink_append(SEXP, SEXP, SEXP);
+extern SEXP C_gsim_packed_hap_sink_begin(SEXP, SEXP);
+extern SEXP C_gsim_packed_hap_sink_write_batch(SEXP, SEXP, SEXP, SEXP);
 extern SEXP C_gsim_packed_hap_sink_finalize(SEXP);
 extern SEXP C_gsim_packed_hap_sink_cancel(SEXP);
 extern SEXP C_gsim_packed_hap_sink_info(SEXP);
@@ -81,6 +86,7 @@ static const R_CallMethodDef call_methods[] = {
     {"C_gsim_packed_copy_interval", (DL_FUNC) &C_gsim_packed_copy_interval, 6},
     {"C_gsim_packed_copy_filtered", (DL_FUNC) &C_gsim_packed_copy_filtered, 8},
     {"C_gsim_packed_copy_filtered_counts", (DL_FUNC) &C_gsim_packed_copy_filtered_counts, 8},
+    {"C_gsim_packed_materialize_founders", (DL_FUNC) &C_gsim_packed_materialize_founders, 14},
     {"C_gsim_packed_make_gamete", (DL_FUNC) &C_gsim_packed_make_gamete, 7},
     {"C_gsim_packed_decode_genotypes", (DL_FUNC) &C_gsim_packed_decode_genotypes, 2},
     {"C_gsim_packed_bed_sink_create", (DL_FUNC) &C_gsim_packed_bed_sink_create, 5},
@@ -90,6 +96,8 @@ static const R_CallMethodDef call_methods[] = {
     {"C_gsim_packed_bed_sink_info", (DL_FUNC) &C_gsim_packed_bed_sink_info, 1},
     {"C_gsim_packed_hap_sink_create", (DL_FUNC) &C_gsim_packed_hap_sink_create, 4},
     {"C_gsim_packed_hap_sink_append", (DL_FUNC) &C_gsim_packed_hap_sink_append, 3},
+    {"C_gsim_packed_hap_sink_begin", (DL_FUNC) &C_gsim_packed_hap_sink_begin, 2},
+    {"C_gsim_packed_hap_sink_write_batch", (DL_FUNC) &C_gsim_packed_hap_sink_write_batch, 4},
     {"C_gsim_packed_hap_sink_finalize", (DL_FUNC) &C_gsim_packed_hap_sink_finalize, 1},
     {"C_gsim_packed_hap_sink_cancel", (DL_FUNC) &C_gsim_packed_hap_sink_cancel, 1},
     {"C_gsim_packed_hap_sink_info", (DL_FUNC) &C_gsim_packed_hap_sink_info, 1},

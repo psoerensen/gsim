@@ -5,6 +5,8 @@
 #include "standalone_hap.h"
 #include "standalone_packed.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <exception>
 #include <filesystem>
@@ -13,6 +15,7 @@
 #include <memory>
 #include <new>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -163,6 +166,95 @@ status_t copy_filtered(handle_t* destination, std::uint64_t di,
     return protect([&] { packed(destination).copy_filtered_segment(
         di, packed(source), si, first, last, age, mutation, count); });
 }
+status_t materialize_founders(
+    handle_t* destination_h1, handle_t* destination_h2,
+    const handle_t* reference_h1, const handle_t* reference_h2,
+    const std::uint64_t* destination, const std::uint32_t* phase,
+    const std::uint64_t* donor, const std::uint64_t* first,
+    const std::uint64_t* last, const double* age, std::uint64_t event_count,
+    const double* mutation, std::uint64_t mutation_count,
+    std::uint32_t requested_threads, std::uint64_t* copied,
+    std::uint64_t* retained) {
+    return protect([&] {
+        auto& out_h1 = packed(destination_h1);
+        auto& out_h2 = packed(destination_h2);
+        const auto& ref_h1 = packed(reference_h1);
+        const auto& ref_h2 = packed(reference_h2);
+        if (out_h1.individual_count() != out_h2.individual_count() ||
+            out_h1.marker_count() != out_h2.marker_count() ||
+            ref_h1.individual_count() != ref_h2.individual_count() ||
+            ref_h1.marker_count() != ref_h2.marker_count() ||
+            out_h1.marker_count() != ref_h1.marker_count()) {
+            invalid_argument("founder materialization requires compatible phases");
+        }
+        if (requested_threads == 0u || mutation == nullptr ||
+            mutation_count != out_h1.marker_count() ||
+            (event_count != 0u &&
+             (destination == nullptr || phase == nullptr || donor == nullptr ||
+              first == nullptr || last == nullptr || age == nullptr))) {
+            invalid_argument("founder materialization arguments are invalid");
+        }
+        for (std::uint64_t marker = 0u; marker < mutation_count; ++marker) {
+            if (!std::isfinite(mutation[static_cast<std::size_t>(marker)]) ||
+                mutation[static_cast<std::size_t>(marker)] < 0.0) {
+                invalid_argument("mutation ages must be finite and nonnegative");
+            }
+        }
+        std::uint64_t previous = 0u;
+        for (std::uint64_t i = 0u; i < event_count; ++i) {
+            if (destination[i] >= out_h1.individual_count() || phase[i] > 1u ||
+                donor[i] >= ref_h1.individual_count() || first[i] > last[i] ||
+                last[i] >= out_h1.marker_count() || !std::isfinite(age[i]) ||
+                age[i] < 0.0 || (i != 0u && destination[i] < previous)) {
+                invalid_argument("founder event plan is invalid or unsorted");
+            }
+            previous = destination[i];
+        }
+        if (event_count == 0u) return;
+        const std::uint64_t words = out_h1.words_per_marker();
+        const std::uint32_t worker_count = static_cast<std::uint32_t>(
+            std::min<std::uint64_t>(requested_threads, words));
+        std::vector<std::exception_ptr> failures(worker_count);
+        auto work = [&](std::uint32_t worker) {
+            try {
+                const std::uint64_t first_word = words * worker / worker_count;
+                const std::uint64_t last_word = words * (worker + 1u) / worker_count;
+                const std::uint64_t first_individual = first_word * 64u;
+                const std::uint64_t last_individual = std::min(
+                    out_h1.individual_count(), last_word * 64u);
+                const std::uint64_t* begin = std::lower_bound(
+                    destination, destination + event_count, first_individual);
+                const std::uint64_t* end = std::lower_bound(
+                    begin, destination + event_count, last_individual);
+                for (const std::uint64_t* item = begin; item != end; ++item) {
+                    const std::uint64_t i = static_cast<std::uint64_t>(item - destination);
+                    auto& output = phase[i] == 0u ? out_h1 : out_h2;
+                    const auto& source = phase[i] == 0u ? ref_h1 : ref_h2;
+                    const auto counts = output.copy_filtered_segment_counts(
+                        destination[i], source, donor[i], first[i], last[i],
+                        age[i], mutation, mutation_count);
+                    if (copied != nullptr) copied[i] = counts.first;
+                    if (retained != nullptr) retained[i] = counts.second;
+                }
+            } catch (...) {
+                failures[worker] = std::current_exception();
+            }
+        };
+        std::vector<std::thread> workers;
+        workers.reserve(worker_count > 0u ? worker_count - 1u : 0u);
+        try {
+            for (std::uint32_t worker = 1u; worker < worker_count; ++worker) {
+                workers.emplace_back(work, worker);
+            }
+            work(0u);
+        } catch (...) {
+            for (auto& worker : workers) if (worker.joinable()) worker.join();
+            throw;
+        }
+        for (auto& worker : workers) worker.join();
+        for (const auto& failure : failures) if (failure) std::rethrow_exception(failure);
+    });
+}
 status_t make_gamete(handle_t* destination, std::uint64_t di,
                      const handle_t* h1, const handle_t* h2, std::uint64_t pi,
                      std::uint32_t starting, const std::uint64_t* boundaries,
@@ -222,6 +314,13 @@ status_t hap_sink_create(const char* path, std::uint64_t n,
 }
 status_t hap_sink_append(handle_t* sink, const handle_t* h1, const handle_t* h2) {
     return protect([&] { required<HapSinkHandle>(sink,"HAP sink").value.append(packed(h1),packed(h2)); });
+}
+status_t hap_sink_begin(handle_t* sink, std::uint64_t marker_count) {
+    return protect([&] { required<HapSinkHandle>(sink,"HAP sink").value.begin_chromosome(marker_count); });
+}
+status_t hap_sink_write_batch(handle_t* sink, const handle_t* h1,
+                              const handle_t* h2, std::uint64_t offset) {
+    return protect([&] { required<HapSinkHandle>(sink,"HAP sink").value.write_batch(packed(h1),packed(h2),offset); });
 }
 status_t hap_sink_finalize(handle_t* sink) { return protect([&] { required<HapSinkHandle>(sink,"HAP sink").value.finalize(); }); }
 status_t hap_sink_info(const handle_t* sink, HapSinkInfo* out) {

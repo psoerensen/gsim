@@ -42,6 +42,12 @@ status_t copy_interval(handle_t*, std::uint64_t, const handle_t*, std::uint64_t,
 status_t copy_filtered(handle_t*, std::uint64_t, const handle_t*, std::uint64_t,
                        std::uint64_t, std::uint64_t, double, const double*,
                        std::uint64_t);
+status_t materialize_founders(
+    handle_t*, handle_t*, const handle_t*, const handle_t*,
+    const std::uint64_t*, const std::uint32_t*, const std::uint64_t*,
+    const std::uint64_t*, const std::uint64_t*, const double*, std::uint64_t,
+    const double*, std::uint64_t, std::uint32_t, std::uint64_t*,
+    std::uint64_t*);
 status_t make_gamete(handle_t*, std::uint64_t, const handle_t*, const handle_t*,
                      std::uint64_t, std::uint32_t, const std::uint64_t*,
                      std::uint64_t);
@@ -58,6 +64,9 @@ status_t bed_sink_info(const handle_t*, BedSinkInfo*);
 status_t bed_sink_close(handle_t*);
 status_t hap_sink_create(const char*, std::uint64_t, std::uint32_t, handle_t**);
 status_t hap_sink_append(handle_t*, const handle_t*, const handle_t*);
+status_t hap_sink_begin(handle_t*, std::uint64_t);
+status_t hap_sink_write_batch(handle_t*, const handle_t*, const handle_t*,
+                              std::uint64_t);
 status_t hap_sink_finalize(handle_t*);
 status_t hap_sink_info(const handle_t*, HapSinkInfo*);
 status_t hap_sink_close(handle_t*);

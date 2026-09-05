@@ -2,6 +2,7 @@
 
 #include "standalone_error.h"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cerrno>
@@ -152,7 +153,8 @@ void read_exact(std::ifstream& input, std::uint64_t offset,
 PhasedHapSink::PhasedHapSink(std::string destination_utf8,
                              std::uint64_t individual_count, bool overwrite)
     : stream_(nullptr), individual_count_(individual_count), marker_count_(0u),
-      bytes_written_(0u), overwrite_(overwrite), state_(HapSinkState::failed) {
+      bytes_written_(0u), overwrite_(overwrite), state_(HapSinkState::failed),
+      chromosome_open_(false), next_individual_(0u) {
     if (destination_utf8.empty()) invalid_argument("HAP destination path must not be empty");
     if (individual_count_ == 0u) invalid_argument("HAP sample count must be positive");
     std::error_code error;
@@ -268,22 +270,27 @@ void PhasedHapSink::require_open(const char* operation) const {
 
 void PhasedHapSink::append(const PhasedHaplotypeMatrix& h1,
                            const PhasedHaplotypeMatrix& h2) {
+    begin_chromosome(h1.marker_count());
+    write_batch(h1, h2, 0u);
+}
+
+void PhasedHapSink::begin_chromosome(std::uint64_t chromosome_markers) {
     require_open("HAP append");
     try {
-        if (h1.individual_count() != h2.individual_count() ||
-            h1.marker_count() != h2.marker_count() ||
-            h1.words_per_marker() != h2.words_per_marker()) {
-            invalid_argument("HAP append requires compatible H1/H2 dimensions and stride");
+        if (chromosome_markers == 0u) {
+            invalid_argument("HAP chromosome marker count must be positive");
         }
-        if (h1.individual_count() != individual_count_) {
-            invalid_argument("HAP append sample count differs from sink contract");
+        if (chromosome_open_ && next_individual_ != individual_count_) {
+            invalid_argument("previous HAP chromosome has incomplete sample coverage");
         }
-        if (!h1.has_canonical_padding() || !h2.has_canonical_padding()) {
-            invalid_argument("HAP append requires canonical zero padding");
-        }
-        const std::uint64_t phase_bytes = h1.storage_bytes();
+        const std::uint64_t words = individual_count_ / 64u +
+            static_cast<std::uint64_t>(individual_count_ % 64u != 0u);
+        const std::uint64_t phase_words = checked_multiply(
+            chromosome_markers, words, "HAP chromosome word count");
+        const std::uint64_t phase_bytes = checked_multiply(
+            phase_words, 8u, "HAP chromosome phase bytes");
         const std::uint64_t next_markers = checked_add(
-            marker_count_, h1.marker_count(), "HAP marker count");
+            marker_count_, chromosome_markers, "HAP marker count");
         const std::uint64_t h1_offset = bytes_written_;
         const std::uint64_t h2_offset = checked_add(h1_offset, phase_bytes,
                                                     "HAP H2 offset");
@@ -293,18 +300,79 @@ void PhasedHapSink::append(const PhasedHaplotypeMatrix& h1,
                              std::numeric_limits<std::streamoff>::max())) {
             invalid_argument("HAP data exceeds platform file-offset limits");
         }
-        HapChromosomeInfo info{marker_count_, h1.marker_count(), h1_offset,
+        HapChromosomeInfo info{marker_count_, chromosome_markers, h1_offset,
                                h2_offset, phase_bytes};
-        for (const PhasedHaplotypeMatrix* phase : {&h1, &h2}) {
-            for (std::uint64_t marker = 0u; marker < phase->marker_count(); ++marker) {
-                for (std::uint64_t word = 0u; word < phase->words_per_marker(); ++word) {
-                    write_u64(phase->word(marker, word), "append packed HAP word");
-                }
-            }
+        std::array<std::uint8_t, 65536u> zeros{};
+        std::uint64_t remaining = checked_multiply(
+            phase_bytes, 2u, "HAP chromosome data bytes");
+        while (remaining != 0u) {
+            const std::size_t count = static_cast<std::size_t>(
+                std::min<std::uint64_t>(remaining, zeros.size()));
+            write_bytes(zeros.data(), count, "reserve packed HAP chromosome");
+            remaining -= static_cast<std::uint64_t>(count);
         }
         chromosomes_.push_back(info);
         marker_count_ = next_markers;
         bytes_written_ = next_bytes;
+        chromosome_open_ = true;
+        next_individual_ = 0u;
+    } catch (...) {
+        fail_and_cleanup();
+        throw;
+    }
+}
+
+void PhasedHapSink::write_batch(const PhasedHaplotypeMatrix& h1,
+                                const PhasedHaplotypeMatrix& h2,
+                                std::uint64_t individual_offset) {
+    require_open("HAP batch write");
+    try {
+        if (!chromosome_open_ || chromosomes_.empty()) {
+            invalid_argument("HAP batch write requires an active chromosome");
+        }
+        const HapChromosomeInfo& chromosome = chromosomes_.back();
+        if (h1.individual_count() != h2.individual_count() ||
+            h1.marker_count() != h2.marker_count() ||
+            h1.words_per_marker() != h2.words_per_marker() ||
+            h1.marker_count() != chromosome.marker_count) {
+            invalid_argument("HAP batch write requires compatible H1/H2 dimensions");
+        }
+        if (!h1.has_canonical_padding() || !h2.has_canonical_padding()) {
+            invalid_argument("HAP batch write requires canonical zero padding");
+        }
+        if (individual_offset != next_individual_ || individual_offset % 64u != 0u ||
+            h1.individual_count() > individual_count_ - individual_offset) {
+            invalid_argument("HAP batch sample range is nonsequential, unaligned, or out of range");
+        }
+        const std::uint64_t batch_end = checked_add(
+            individual_offset, h1.individual_count(), "HAP batch sample end");
+        if (batch_end != individual_count_ && h1.individual_count() % 64u != 0u) {
+            invalid_argument("nonfinal HAP batches must contain complete 64-sample words");
+        }
+        const std::uint64_t destination_words = individual_count_ / 64u +
+            static_cast<std::uint64_t>(individual_count_ % 64u != 0u);
+        const std::uint64_t first_word = individual_offset / 64u;
+        for (const auto& plane : {
+                 std::make_pair(chromosome.h1_offset, &h1),
+                 std::make_pair(chromosome.h2_offset, &h2)}) {
+            for (std::uint64_t marker = 0u; marker < chromosome.marker_count; ++marker) {
+                const std::uint64_t word_index = checked_add(
+                    checked_multiply(marker, destination_words,
+                                     "HAP batch marker offset"),
+                    first_word, "HAP batch word offset");
+                const std::uint64_t byte_offset = checked_add(
+                    plane.first,
+                    checked_multiply(word_index, 8u, "HAP batch byte offset"),
+                    "HAP batch file offset");
+                seek(byte_offset, "seek HAP batch range");
+                for (std::uint64_t word = 0u;
+                     word < plane.second->words_per_marker(); ++word) {
+                    write_u64(plane.second->word(marker, word),
+                              "write packed HAP batch word");
+                }
+            }
+        }
+        next_individual_ = batch_end;
     } catch (...) {
         fail_and_cleanup();
         throw;
@@ -345,6 +413,10 @@ void PhasedHapSink::finalize() {
         if (chromosomes_.empty() || marker_count_ == 0u) {
             invalid_argument("HAP finalization requires at least one nonempty chromosome");
         }
+        if (!chromosome_open_ || next_individual_ != individual_count_) {
+            invalid_argument("HAP finalization requires complete chromosome sample coverage");
+        }
+        seek(bytes_written_, "seek HAP chromosome table");
         const std::uint64_t table_offset = bytes_written_;
         const std::uint64_t table_bytes = checked_multiply(
             static_cast<std::uint64_t>(chromosomes_.size()), table_entry_size,

@@ -111,9 +111,11 @@ is rejected rather than silently substituted.
 
 ## RNG and batch policy
 
-The native core is single-threaded.  It uses specified SplitMix64 streams and
-does not use R's global RNG or implementation-defined C++ distribution
-objects.  Each `(seed, global haplotype index, chromosome identity)` tuple
+Founder event generation remains canonical and sequential. Packed application
+uses deterministic static native workers assigned disjoint 64-sample output
+words; workers never call the R API and share no RNG. It uses specified
+SplitMix64 streams and does not use R's global RNG or implementation-defined
+C++ distribution objects. Each `(seed, global haplotype index, chromosome identity)` tuple
 derives an independent deterministic stream.  Chromosome identity is the exact
 UTF-8 byte sequence produced by `Rf_translateCharUTF8()` for the explicit
 chromosome label.  Labels are not trimmed, case-folded, numerically interpreted,

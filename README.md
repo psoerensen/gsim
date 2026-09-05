@@ -62,18 +62,20 @@ with `gsim`.
 
 ## Packed reference workflow
 
-The supported packed workflow imports a phased biallelic plain, gzip, or BGZF
-VCF and
-then simulates HAPNEST-compatible founders plus Mendelian pedigree descendants
-without a dense whole-genome allele or genotype matrix:
+The supported packed workflow explicitly separates a real reference panel, an
+unrelated synthetic base population, and its Mendelian pedigree descendants.
+It never constructs a dense whole-genome allele or genotype matrix:
 
 ```r
-reference <- gsim_import_vcf(
-  "reference.vcf", genetic_map, "reference"
+reference <- gsim_import_vcf("reference.vcf.gz", genetic_map, "reference")
+base <- gsim_simulate_founders(
+  reference, n = 10000, populations = populations,
+  ancestry_weights = ancestry_weights, mutation_age = mutation_age,
+  N = N, Ne = Ne, rho = rho, seed = 123, output = "base",
+  batch_size = 4096, threads = 8
 )
-result <- gsim_simulate(
-  reference, pedigree, populations, ancestry_weights, mutation_age,
-  N, Ne, rho, seed = 123, output = "simulation", format = "hap"
+result <- gsim_simulate_pedigree(
+  base, pedigree, seed = 456, output = "pedigree", format = "hap"
 )
 ```
 
@@ -84,8 +86,13 @@ left/right order is retained as H1/H2. The importer
 retains complete phased diploid GT at uppercase biallelic A/C/G/T SNPs.
 Unsupported biological records may be counted and skipped. A sparse physical
 map supplies cumulative cM knots, with deterministic interpolation and no
-extrapolation. Each chromosome is loaded, simulated, written, and released
-before the next.
+extrapolation. Founder batches are aligned to 64-sample packed words and written
+directly into final marker-major HAP positions. Static native workers own
+disjoint output words, so batch size and thread scheduling do not change output.
+The founder seed affects only the base population; the pedigree seed affects
+only meiosis. HAP retains phase and is reusable across pedigree runs, while BED
+is an unphased dosage output. Pedigree meiosis remains single-threaded because
+parents and children can occupy the same mutable packed word.
 
 See [the direct 1000 Genomes chromosome 22 example](inst/examples/1000G_chr22.R)
 for an internet-enabled GRCh37 workflow using the official approximately

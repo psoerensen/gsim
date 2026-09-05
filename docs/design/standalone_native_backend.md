@@ -1,6 +1,6 @@
 # Standalone native backend
 
-`gsim` 0.9 compiles its complete supported VCF-to-simulation workflow into the
+`gsim` 0.11 compiles its complete supported VCF-to-simulation workflow into the
 package shared library. It never searches for or loads `gbits` or `gmat`, and
 the former `GSIM_GBITS_LIBRARY` and `GSIM_GMAT_LIBRARY` variables have no
 meaning.
@@ -29,7 +29,8 @@ BIM/FAM, and strict phased-VCF components originated in our own `gmat` project
 at revision `33d6751abf00c41a15223459df7cae028d54b4b5`; they are distributed as
 part of gsim under gsim's GPL-3 license.
 
-One phase uses `8 * markers * ceiling(samples / 64)` bytes. Work is
-chromosome-local: import, founder generation, meiosis, HAP writing, and BED
-writing release each chromosome before the next. No production path allocates
-a dense haplotype or genotype matrix.
+One phase uses `8 * markers * ceiling(samples / 64)` bytes. Founder generation
+is batch-local: only the current reference chromosome and one word-aligned
+founder batch are resident, and batches are written positionally into the
+marker-major HAP staging file. Work is otherwise chromosome-local. No
+production path allocates a dense haplotype or genotype matrix.

@@ -265,28 +265,17 @@
   backend, reference_h1, reference_h2, donor_population, ancestry_weights,
   N, Ne, rho, genetic_position, mutation_age, n, seed, chromosome,
   donor_phase = "hapnest", return_genotypes = FALSE, return_segments = TRUE,
-  individual_offset = 0L
+  individual_offset = 0L, threads = 1L
 ) {
   input <- .gsim_hapnest_packed_reference_inputs(
     backend, reference_h1, reference_h2, donor_population, ancestry_weights,
     N, Ne, rho, genetic_position, mutation_age, n, seed, chromosome,
     donor_phase, return_genotypes, return_segments, individual_offset)
-  segment <- .Call(
+  plan <- .Call(
     C_gsim_hapnest_plan, input$donor_count, input$marker_count,
     input$donor_codes, input$weights, input$N, input$Ne, input$rho,
     rep.int(1L, input$marker_count), input$chromosome[[1L]],
     input$genetic_position, input$n, input$seed, input$individual_offset)
-  segment$chromosome <- rep.int(input$chromosome[[1L]], length(segment$phase))
-  segment$donor_population <- input$active[segment$donor_population_code]
-  segment$chromosome_block <- NULL
-  segment$donor_population_code <- NULL
-  segment <- segment[c(
-    "individual", "phase", "haplotype", "chromosome", "start", "end",
-    "donor_individual", "donor_population", "coalescent_age",
-    "sampled_length", "copied_genetic_span", "copied_alternative",
-    "retained_alternative")]
-  class(segment) <- "data.frame"
-  attr(segment, "row.names") <- .set_row_names(length(segment$phase))
   ids <- paste0("syn", input$individual_offset + seq_len(input$n))
   h1 <- .gsim_packed_zero(backend, input$n, input$marker_count,
                          ids, input$variant_ids)
@@ -299,23 +288,29 @@
       try(.gsim_packed_close(h2), silent = TRUE)
     }
   }, add = TRUE)
-  for (i in seq_len(nrow(segment))) {
-    record <- segment[i, ]
-    destination <- if (record$phase == 1L) h1 else h2
-    source <- if (record$phase == 1L) reference_h1 else reference_h2
-    if (input$return_segments) {
-      counts <- .gsim_packed_copy_filtered_counts(
-        destination, record$individual - input$individual_offset, source,
-        record$donor_individual, record$start, record$end,
-        record$coalescent_age, input$mutation_age)
-      segment$copied_alternative[[i]] <- counts[[1L]]
-      segment$retained_alternative[[i]] <- counts[[2L]]
-    } else {
-      .gsim_packed_copy_filtered(
-        destination, record$individual - input$individual_offset, source,
-        record$donor_individual, record$start, record$end,
-        record$coalescent_age, input$mutation_age)
-    }
+  threads <- .gsim_hapnest_integer_scalar(threads, "threads", 1)
+  counts <- .Call(
+    C_gsim_packed_materialize_founders, h1, h2, reference_h1, reference_h2,
+    plan$individual, plan$phase, plan$donor_individual,
+    plan$start, plan$end, plan$coalescent_age, input$mutation_age,
+    as.integer(input$individual_offset), as.integer(threads),
+    input$return_segments
+  )
+  segment <- NULL
+  if (input$return_segments) {
+    plan$chromosome <- rep.int(input$chromosome[[1L]], length(plan$phase))
+    plan$donor_population <- input$active[plan$donor_population_code]
+    plan$chromosome_block <- NULL
+    plan$donor_population_code <- NULL
+    plan$copied_alternative <- counts$copied_alternative
+    plan$retained_alternative <- counts$retained_alternative
+    segment <- plan[c(
+      "individual", "phase", "haplotype", "chromosome", "start", "end",
+      "donor_individual", "donor_population", "coalescent_age",
+      "sampled_length", "copied_genetic_span", "copied_alternative",
+      "retained_alternative")]
+    class(segment) <- "data.frame"
+    attr(segment, "row.names") <- .set_row_names(length(segment$phase))
   }
   genotypes <- if (input$return_genotypes) {
     .gsim_packed_decode_genotypes(h1, h2)
@@ -338,7 +333,9 @@
     chromosomes = input$chromosome[[1L]],
     storage = "gsim marker-major one-bit phased haplotypes",
     implementation_origin = attr(backend, "packed_origin", exact = TRUE),
-    decoded_genotypes = input$return_genotypes)
+    decoded_genotypes = input$return_genotypes,
+    threads = threads,
+    materialization = "one native batch call; static disjoint packed-word workers")
   reference_bytes <- unname(input$info_h1[[4L]] + input$info_h2[[4L]])
   generated_bytes <- unname(.gsim_packed_info(h1)[[4L]] +
                               .gsim_packed_info(h2)[[4L]])
@@ -352,7 +349,9 @@
       reference_packed_bytes = reference_bytes,
       generated_raw_bytes_avoided = 2 * input$n * input$marker_count,
       generated_packed_bytes = generated_bytes,
-      event_record_bytes = as.numeric(object.size(segment)),
+      event_record_bytes = as.numeric(object.size(
+        if (input$return_segments) segment else plan
+      )),
       peak_biological_payload_bytes = reference_bytes + generated_bytes,
       chromosome_temporary_bytes = 0,
       decoded_genotype_bytes = if (input$return_genotypes) length(genotypes) else 0)
@@ -366,7 +365,8 @@
   backend, reference_haplotypes_h1, reference_haplotypes_h2,
   donor_population, ancestry_weights, N, Ne, rho, genetic_position,
   mutation_age, n, seed, chromosome, donor_phase = "hapnest",
-  return_genotypes = FALSE, return_segments = TRUE, individual_offset = 0L
+  return_genotypes = FALSE, return_segments = TRUE, individual_offset = 0L,
+  threads = 1L
 ) {
   raw_h1 <- .gsim_hapnest_raw_matrix(
     reference_haplotypes_h1, "reference_haplotypes_h1")
@@ -385,7 +385,7 @@
   out <- .gsim_hapnest_founders_packed_reference_chromosome(
     backend, reference_h1, reference_h2, donor_population, ancestry_weights,
     N, Ne, rho, genetic_position, mutation_age, n, seed, chromosome,
-    donor_phase, return_genotypes, return_segments, individual_offset)
+    donor_phase, return_genotypes, return_segments, individual_offset, threads)
   out$memory$reference_raw_bytes <- 2 * length(raw_h1)
   out
 }

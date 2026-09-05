@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 namespace gsim::native {
@@ -45,6 +46,15 @@ public:
                                double coalescent_age,
                                const double* mutation_age,
                                std::uint64_t mutation_age_count);
+    std::pair<std::uint64_t, std::uint64_t> copy_filtered_segment_counts(
+        std::uint64_t destination_individual,
+        const PhasedHaplotypeMatrix& source,
+        std::uint64_t source_individual,
+        std::uint64_t first_marker,
+        std::uint64_t last_marker,
+        double coalescent_age,
+        const double* mutation_age,
+        std::uint64_t mutation_age_count);
     void make_gamete(std::uint64_t destination_individual,
                      const PhasedHaplotypeMatrix& parent_h1,
                      const PhasedHaplotypeMatrix& parent_h2,

@@ -12,7 +12,7 @@ vcf_url <- paste0(
 )
 map_url <- paste0(
   "https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/technical/working/",
-  "20130507_omni_recombination_rates/",
+  "20110106_recombination_hotspots/",
   "HapmapII_GRCh37_RecombinationHotspots.tar.gz"
 )
 
@@ -81,37 +81,45 @@ populations <- stats::setNames(
 mutation_age <- stats::setNames(
   rep(1e9, length(reference$variant_ids)), reference$variant_ids
 )
-simulation_arguments <- list(
+canonical <- pedigree$pedigree[
+  match(pedigree$canonical_order, pedigree$pedigree$animal), , drop = FALSE
+]
+founder_ids <- as.character(canonical$animal[is.na(canonical$sire) &
+                                               is.na(canonical$dam)])
+base <- gsim_simulate_founders(
   reference = reference,
-  pedigree = pedigree,
+  founder_ids = founder_ids,
   populations = populations,
   ancestry_weights = c(P1 = 0.5, P2 = 0.5),
   mutation_age = mutation_age,
   N = c(P1 = 4, P2 = 4),
   Ne = c(P1 = 10000, P2 = 10000),
-  rho = c(P1 = 0.02, P2 = 0.02),
-  seed = 123
+  rho = c(P1 = 0.02, P2 = 0.02), seed = 123,
+  output = file.path(output_dir, "base"), batch_size = 64, threads = 2,
+  overwrite = TRUE
 )
-hap_result <- do.call(gsim_simulate, c(
-  simulation_arguments,
-  list(output = file.path(output_dir, "simulation-hap"),
-       format = "hap", overwrite = TRUE)
-))
+hap_result <- gsim_simulate_pedigree(
+  founders = base, pedigree = pedigree, seed = 456,
+  output = file.path(output_dir, "simulation-hap"), format = "hap",
+  overwrite = TRUE
+)
 
 # Set GSIM_1000G_WRITE_BED=true to produce BED/BIM/FAM from the same packed
 # simulation. This is optional because it repeats the simulation deterministically.
 if (identical(tolower(Sys.getenv("GSIM_1000G_WRITE_BED")), "true")) {
-  bed_result <- do.call(gsim_simulate, c(
-    simulation_arguments,
-    list(output = file.path(output_dir, "simulation-bed"),
-         format = "bed", overwrite = TRUE)
-  ))
+  bed_result <- gsim_simulate_pedigree(
+    founders = base, pedigree = pedigree, seed = 456,
+    output = file.path(output_dir, "simulation-bed"), format = "bed",
+    overwrite = TRUE
+  )
   print(list(paths = bed_result$paths,
              individual_count = bed_result$individual_count,
              marker_count = length(bed_result$variant_ids)))
 }
 
 print(reference$import)
+print(list(base = base$paths, founder_count = base$individual_count,
+           batching = base$simulation[c("actual_batch_size", "threads")]))
 print(list(paths = hap_result$paths,
            individual_count = hap_result$individual_count,
            marker_count = length(hap_result$variant_ids),
