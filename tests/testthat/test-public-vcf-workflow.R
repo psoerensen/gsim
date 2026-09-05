@@ -79,12 +79,12 @@ testthat::test_that("public VCF to founder, pedigree, HAP, and BED is exact", {
   testthat::expect_identical(hap$variant_ids, reference$variant_ids)
   testthat::expect_identical(bed$variant_ids, reference$variant_ids)
 
-  gbits <- gsim:::.gsim_packed_backend()
-  gmat <- gsim:::.gsim_metadata_backend()
+  gbits <- NULL
+  gmat <- NULL
   output <- gsim:::.gsim_hap_dataset_open(
-    gbits, gmat, file.path(root, "simulation-hap"))
+    file.path(root, "simulation-hap"))
   reference_reader <- gsim:::.gsim_hap_dataset_open(
-    gbits, gmat, file.path(root, "reference"))
+    file.path(root, "reference"))
   expected_genotypes <- list()
   for (chromosome in c("B", "A")) {
     rows <- which(reference_reader$variants$chromosome == chromosome)
@@ -121,7 +121,7 @@ testthat::test_that("public VCF to founder, pedigree, HAP, and BED is exact", {
     gsim:::.gsim_packed_close(actual$h1); gsim:::.gsim_packed_close(actual$h2)
   }
   decoded <- gsim:::.gsim_packed_bed_read_all(
-    gbits, bed$paths[["bed"]], length(pedigree$canonical_order),
+    bed$paths[["bed"]], length(pedigree$canonical_order),
     length(reference$variant_ids))
   expected_all <- do.call(cbind, expected_genotypes[c("B", "A")])
   testthat::expect_identical(as.vector(decoded), as.integer(expected_all))
@@ -139,7 +139,7 @@ testthat::test_that("public VCF to founder, pedigree, HAP, and BED is exact", {
     reverse_base, pedigree, 717, file.path(root, "simulation-reverse"), "hap"
   )
   reverse_reader <- gsim:::.gsim_hap_dataset_open(
-    gbits, gmat, file.path(root, "simulation-reverse"))
+    file.path(root, "simulation-reverse"))
   for (chromosome in c("B", "A")) {
     forward_phase <- gsim:::.gsim_hap_dataset_load_chromosome(output, chromosome)
     reverse_phase <- gsim:::.gsim_hap_dataset_load_chromosome(reverse_reader,
@@ -168,7 +168,7 @@ testthat::test_that("public VCF to founder, pedigree, HAP, and BED is exact", {
     single_base, pedigree, 717, file.path(root, "simulation-single"), "hap"
   )
   single_reader <- gsim:::.gsim_hap_dataset_open(
-    gbits, gmat, file.path(root, "simulation-single"))
+    file.path(root, "simulation-single"))
   collection_b <- gsim:::.gsim_hap_dataset_load_chromosome(output, "B")
   standalone_b <- gsim:::.gsim_hap_dataset_load_chromosome(single_reader, "B")
   testthat::expect_identical(gsim:::.gsim_packed_unpack(collection_b$h1),

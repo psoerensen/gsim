@@ -1,12 +1,15 @@
-#include "standalone_packed.h"
+#include "packed_chromosome.h"
 
-#include "standalone_error.h"
+#include "native_error.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <limits>
 #include <string>
+#include <thread>
 
 namespace gsim::native {
 namespace {
@@ -220,20 +223,6 @@ void PhasedHaplotypeMatrix::copy_interval(
     }
 }
 
-void PhasedHaplotypeMatrix::copy_filtered_segment(
-    std::uint64_t destination_individual,
-    const PhasedHaplotypeMatrix& source,
-    std::uint64_t source_individual,
-    std::uint64_t first_marker,
-    std::uint64_t last_marker,
-    double coalescent_age,
-    const double* mutation_age,
-    std::uint64_t mutation_age_count) {
-    (void)copy_filtered_segment_counts(
-        destination_individual, source, source_individual, first_marker,
-        last_marker, coalescent_age, mutation_age, mutation_age_count);
-}
-
 std::pair<std::uint64_t, std::uint64_t>
 PhasedHaplotypeMatrix::copy_filtered_segment_counts(
     std::uint64_t destination_individual,
@@ -344,6 +333,94 @@ void PhasedHaplotypeMatrix::decode_genotypes(
                 static_cast<std::uint8_t>(allele(individual, marker) +
                                           h2.allele(individual, marker));
         }
+    }
+}
+
+void materialize_founders(
+    PhasedHaplotypeMatrix& out_h1, PhasedHaplotypeMatrix& out_h2,
+    const PhasedHaplotypeMatrix& ref_h1,
+    const PhasedHaplotypeMatrix& ref_h2,
+    const std::uint64_t* destination, const std::uint32_t* phase,
+    const std::uint64_t* donor, const std::uint64_t* first,
+    const std::uint64_t* last, const double* age, std::uint64_t event_count,
+    const double* mutation, std::uint64_t mutation_count,
+    std::uint32_t requested_threads, std::uint64_t* copied,
+    std::uint64_t* retained) {
+    if (out_h1.individual_count() != out_h2.individual_count() ||
+        out_h1.marker_count() != out_h2.marker_count() ||
+        ref_h1.individual_count() != ref_h2.individual_count() ||
+        ref_h1.marker_count() != ref_h2.marker_count() ||
+        out_h1.marker_count() != ref_h1.marker_count()) {
+        invalid_argument("founder materialization requires compatible phases");
+    }
+    if (requested_threads == 0u || mutation == nullptr ||
+        mutation_count != out_h1.marker_count() ||
+        (event_count != 0u &&
+         (destination == nullptr || phase == nullptr || donor == nullptr ||
+          first == nullptr || last == nullptr || age == nullptr))) {
+        invalid_argument("founder materialization arguments are invalid");
+    }
+    for (std::uint64_t marker = 0u; marker < mutation_count; ++marker) {
+        if (!std::isfinite(mutation[static_cast<std::size_t>(marker)]) ||
+            mutation[static_cast<std::size_t>(marker)] < 0.0) {
+            invalid_argument("mutation ages must be finite and nonnegative");
+        }
+    }
+    std::uint64_t previous = 0u;
+    for (std::uint64_t i = 0u; i < event_count; ++i) {
+        if (destination[i] >= out_h1.individual_count() || phase[i] > 1u ||
+            donor[i] >= ref_h1.individual_count() || first[i] > last[i] ||
+            last[i] >= out_h1.marker_count() || !std::isfinite(age[i]) ||
+            age[i] < 0.0 || (i != 0u && destination[i] < previous)) {
+            invalid_argument("founder event plan is invalid or unsorted");
+        }
+        previous = destination[i];
+    }
+    if (event_count == 0u) return;
+    const std::uint64_t words = out_h1.words_per_marker();
+    const std::uint32_t worker_count = static_cast<std::uint32_t>(
+        std::min<std::uint64_t>(requested_threads, words));
+    std::vector<std::exception_ptr> failures(worker_count);
+    auto work = [&](std::uint32_t worker) {
+        try {
+            const std::uint64_t first_word = words * worker / worker_count;
+            const std::uint64_t last_word = words * (worker + 1u) / worker_count;
+            const std::uint64_t first_individual = first_word * 64u;
+            const std::uint64_t last_individual = std::min(
+                out_h1.individual_count(), last_word * 64u);
+            const std::uint64_t* begin = std::lower_bound(
+                destination, destination + event_count, first_individual);
+            const std::uint64_t* end = std::lower_bound(
+                begin, destination + event_count, last_individual);
+            for (const std::uint64_t* item = begin; item != end; ++item) {
+                const std::uint64_t i =
+                    static_cast<std::uint64_t>(item - destination);
+                auto& output = phase[i] == 0u ? out_h1 : out_h2;
+                const auto& source = phase[i] == 0u ? ref_h1 : ref_h2;
+                const auto counts = output.copy_filtered_segment_counts(
+                    destination[i], source, donor[i], first[i], last[i],
+                    age[i], mutation, mutation_count);
+                if (copied != nullptr) copied[i] = counts.first;
+                if (retained != nullptr) retained[i] = counts.second;
+            }
+        } catch (...) {
+            failures[worker] = std::current_exception();
+        }
+    };
+    std::vector<std::thread> workers;
+    workers.reserve(worker_count > 0u ? worker_count - 1u : 0u);
+    try {
+        for (std::uint32_t worker = 1u; worker < worker_count; ++worker) {
+            workers.emplace_back(work, worker);
+        }
+        work(0u);
+    } catch (...) {
+        for (auto& worker : workers) if (worker.joinable()) worker.join();
+        throw;
+    }
+    for (auto& worker : workers) worker.join();
+    for (const auto& failure : failures) {
+        if (failure) std::rethrow_exception(failure);
     }
 }
 

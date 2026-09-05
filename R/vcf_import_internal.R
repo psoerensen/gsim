@@ -2,12 +2,9 @@
 # and gsim owns map/sample alignment and HAP/BIM/FAM publication.
 
 .gsim_vcf_reader_open <- function(
-  metadata_backend, vcf, samples = NULL, chromosome = NULL, region = NULL,
+  vcf, samples = NULL, chromosome = NULL, region = NULL,
   unsupported = "error"
 ) {
-  if (!inherits(metadata_backend, "gsim_metadata_backend")) {
-    .gsim_stop("metadata_backend must be created by .gsim_metadata_backend().")
-  }
   if (!is.character(vcf) || length(vcf) != 1L || is.na(vcf) || !nzchar(vcf)) {
     .gsim_stop("vcf must be one nonempty path string.")
   }
@@ -36,7 +33,7 @@
   unsupported <- match.arg(unsupported, c("skip", "error"))
   path <- normalizePath(vcf, winslash = "/", mustWork = TRUE)
   value <- .Call(
-    C_gsim_metadata_vcf_open, metadata_backend, enc2utf8(path), samples,
+    C_gsim_metadata_vcf_open, enc2utf8(path), samples,
     chromosome, region, unsupported
   )
   value$variants <- as.data.frame(value$variants, stringsAsFactors = FALSE)
@@ -217,12 +214,12 @@
 }
 
 .gsim_import_vcf_internal <- function(
-  backend, metadata_backend, vcf, map, output, sample_metadata = NULL,
+  vcf, map, output, sample_metadata = NULL,
   samples = NULL, chromosome = NULL, region = NULL,
   unsupported = "error", overwrite = FALSE
 ) {
   reader <- .gsim_vcf_reader_open(
-    metadata_backend, vcf, samples, chromosome, region, unsupported
+    vcf, samples, chromosome, region, unsupported
   )
   on.exit(try(.gsim_vcf_reader_close(reader), silent = TRUE), add = TRUE)
   variants <- reader$variants
@@ -247,7 +244,7 @@
     phase_orientation = "GT left allele = H1; GT right allele = H2"
   )
   dataset <- .gsim_hap_dataset_create(
-    backend, metadata_backend, output, sample_table, overwrite, provenance
+    output, sample_table, overwrite, provenance
   )
   completed <- FALSE
   on.exit({
@@ -260,9 +257,9 @@
     count <- as.integer(block$variant_count)
     rows <- seq.int(first, length.out = count)
     marker_ids <- variants$variant_id[rows]
-    h1 <- .gsim_packed_zero(backend, length(reader$samples), count,
+    h1 <- .gsim_packed_zero(length(reader$samples), count,
                            reader$samples, marker_ids)
-    h2 <- .gsim_packed_zero(backend, length(reader$samples), count,
+    h2 <- .gsim_packed_zero(length(reader$samples), count,
                            reader$samples, marker_ids)
     on.exit({
       try(.gsim_packed_close(h1), silent = TRUE)

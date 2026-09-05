@@ -1,11 +1,5 @@
-# Private chromosome-local packed backend compiled into gsim.
-.gsim_packed_backend <- function() {
-  pointer <- .Call(C_gsim_packed_backend)
-  attr(pointer, "packed_origin") <- "internalized gbits 0.20.0 (089bf1e)"
-  attr(pointer, "packed_abi") <- NA_integer_
-  class(pointer) <- "gsim_packed_backend"
-  pointer
-}
+# Private chromosome-local packed storage compiled into gsim.
+.gsim_packed_origin <- function() "internalized gbits 0.20.0 (089bf1e)"
 
 .gsim_packed_tag <- function(pointer, sample_ids = NULL, variant_ids = NULL) {
   attr(pointer, "sample_ids") <- sample_ids
@@ -14,19 +8,19 @@
   pointer
 }
 
-.gsim_packed_pack <- function(backend, values) {
+.gsim_packed_pack <- function(values) {
   values <- .gsim_hapnest_raw_matrix(values, "values")
   .gsim_packed_tag(
-    .Call(C_gsim_packed_pack, backend, values), rownames(values), colnames(values)
+    .Call(C_gsim_packed_pack, values), rownames(values), colnames(values)
   )
 }
 
-.gsim_packed_zero <- function(backend, individuals, markers,
+.gsim_packed_zero <- function(individuals, markers,
                              sample_ids = NULL, variant_ids = NULL) {
   individuals <- .gsim_hapnest_integer_scalar(individuals, "individuals", 1)
   markers <- .gsim_hapnest_integer_scalar(markers, "markers", 1)
   .gsim_packed_tag(
-    .Call(C_gsim_packed_zero, backend, individuals, markers),
+    .Call(C_gsim_packed_zero, individuals, markers),
     sample_ids, variant_ids
   )
 }
@@ -78,38 +72,6 @@
   ))
 }
 
-.gsim_packed_copy_filtered <- function(destination, destination_individual,
-                                      source, source_individual, first, last,
-                                      coalescent_age, mutation_age) {
-  if (!is.numeric(coalescent_age) || length(coalescent_age) != 1L ||
-      !is.finite(coalescent_age) || coalescent_age < 0) {
-    .gsim_stop("coalescent_age must be one finite nonnegative value.")
-  }
-  mutation_age <- as.double(mutation_age)
-  invisible(.Call(
-    C_gsim_packed_copy_filtered, destination,
-    as.integer(destination_individual - 1L), source,
-    as.integer(source_individual - 1L), as.integer(first - 1L),
-    as.integer(last - 1L), as.double(coalescent_age), mutation_age
-  ))
-}
-
-.gsim_packed_copy_filtered_counts <- function(
-  destination, destination_individual, source, source_individual, first, last,
-  coalescent_age, mutation_age
-) {
-  if (!is.numeric(coalescent_age) || length(coalescent_age) != 1L ||
-      !is.finite(coalescent_age) || coalescent_age < 0) {
-    .gsim_stop("coalescent_age must be one finite nonnegative value.")
-  }
-  .Call(
-    C_gsim_packed_copy_filtered_counts, destination,
-    as.integer(destination_individual - 1L), source,
-    as.integer(source_individual - 1L), as.integer(first - 1L),
-    as.integer(last - 1L), as.double(coalescent_age), as.double(mutation_age)
-  )
-}
-
 .gsim_packed_make_gamete <- function(destination, destination_individual,
                                     parent_h1, parent_h2, parent_individual,
                                     starting_haplotype, boundaries) {
@@ -131,7 +93,6 @@
 }
 
 .gsim_hapnest_packed_reference_inputs <- function(
-  backend,
   reference_h1,
   reference_h2,
   donor_population,
@@ -149,10 +110,9 @@
   return_segments = TRUE,
   individual_offset = 0L
 ) {
-  if (!inherits(backend, "gsim_packed_backend") ||
-      !inherits(reference_h1, "gsim_packed_haplotypes") ||
+  if (!inherits(reference_h1, "gsim_packed_haplotypes") ||
       !inherits(reference_h2, "gsim_packed_haplotypes")) {
-    .gsim_stop("backend and packed reference H1/H2 handles are required.")
+    .gsim_stop("Packed reference H1/H2 handles are required.")
   }
   info_h1 <- .gsim_packed_info(reference_h1)
   info_h2 <- .gsim_packed_info(reference_h2)
@@ -262,13 +222,13 @@
 }
 
 .gsim_hapnest_founders_packed_reference_chromosome <- function(
-  backend, reference_h1, reference_h2, donor_population, ancestry_weights,
+  reference_h1, reference_h2, donor_population, ancestry_weights,
   N, Ne, rho, genetic_position, mutation_age, n, seed, chromosome,
   donor_phase = "hapnest", return_genotypes = FALSE, return_segments = TRUE,
   individual_offset = 0L, threads = 1L
 ) {
   input <- .gsim_hapnest_packed_reference_inputs(
-    backend, reference_h1, reference_h2, donor_population, ancestry_weights,
+    reference_h1, reference_h2, donor_population, ancestry_weights,
     N, Ne, rho, genetic_position, mutation_age, n, seed, chromosome,
     donor_phase, return_genotypes, return_segments, individual_offset)
   plan <- .Call(
@@ -277,9 +237,9 @@
     rep.int(1L, input$marker_count), input$chromosome[[1L]],
     input$genetic_position, input$n, input$seed, input$individual_offset)
   ids <- paste0("syn", input$individual_offset + seq_len(input$n))
-  h1 <- .gsim_packed_zero(backend, input$n, input$marker_count,
+  h1 <- .gsim_packed_zero(input$n, input$marker_count,
                          ids, input$variant_ids)
-  h2 <- .gsim_packed_zero(backend, input$n, input$marker_count,
+  h2 <- .gsim_packed_zero(input$n, input$marker_count,
                          ids, input$variant_ids)
   materialized <- FALSE
   on.exit({
@@ -332,7 +292,7 @@
     rho = stats::setNames(input$rho, input$active),
     chromosomes = input$chromosome[[1L]],
     storage = "gsim marker-major one-bit phased haplotypes",
-    implementation_origin = attr(backend, "packed_origin", exact = TRUE),
+    implementation_origin = .gsim_packed_origin(),
     decoded_genotypes = input$return_genotypes,
     threads = threads,
     materialization = "one native batch call; static disjoint packed-word workers")
@@ -362,7 +322,7 @@
 }
 
 .gsim_hapnest_founders_packed_chromosome <- function(
-  backend, reference_haplotypes_h1, reference_haplotypes_h2,
+  reference_haplotypes_h1, reference_haplotypes_h2,
   donor_population, ancestry_weights, N, Ne, rho, genetic_position,
   mutation_age, n, seed, chromosome, donor_phase = "hapnest",
   return_genotypes = FALSE, return_segments = TRUE, individual_offset = 0L,
@@ -376,14 +336,14 @@
       !identical(dimnames(raw_h1), dimnames(raw_h2))) {
     .gsim_stop("Reference H1/H2 dimensions and names must be identical.")
   }
-  reference_h1 <- .gsim_packed_pack(backend, raw_h1)
-  reference_h2 <- .gsim_packed_pack(backend, raw_h2)
+  reference_h1 <- .gsim_packed_pack(raw_h1)
+  reference_h2 <- .gsim_packed_pack(raw_h2)
   on.exit({
     try(.gsim_packed_close(reference_h1), silent = TRUE)
     try(.gsim_packed_close(reference_h2), silent = TRUE)
   }, add = TRUE)
   out <- .gsim_hapnest_founders_packed_reference_chromosome(
-    backend, reference_h1, reference_h2, donor_population, ancestry_weights,
+    reference_h1, reference_h2, donor_population, ancestry_weights,
     N, Ne, rho, genetic_position, mutation_age, n, seed, chromosome,
     donor_phase, return_genotypes, return_segments, individual_offset, threads)
   out$memory$reference_raw_bytes <- 2 * length(raw_h1)
@@ -391,7 +351,6 @@
 }
 
 .gsim_pedigree_genotypes_packed_chromosome <- function(
-  backend,
   pedigree,
   founder_haplotypes,
   chromosome,
@@ -507,8 +466,8 @@
     founder_row_count <- nrow(founder_h1)
     marker_count <- ncol(founder_h1)
     founder_raw_bytes <- 2 * length(founder_h1)
-    source_h1 <- .gsim_packed_pack(backend, founder_h1)
-    source_h2 <- .gsim_packed_pack(backend, founder_h2)
+    source_h1 <- .gsim_packed_pack(founder_h1)
+    source_h2 <- .gsim_packed_pack(founder_h2)
     on.exit({
       try(.gsim_packed_close(source_h1), silent = TRUE)
       try(.gsim_packed_close(source_h2), silent = TRUE)
@@ -551,9 +510,9 @@
   }
 
   animal_count <- length(canonical)
-  h1 <- .gsim_packed_zero(backend, animal_count, marker_count,
+  h1 <- .gsim_packed_zero(animal_count, marker_count,
                          canonical, variant_ids)
-  h2 <- .gsim_packed_zero(backend, animal_count, marker_count,
+  h2 <- .gsim_packed_zero(animal_count, marker_count,
                          canonical, variant_ids)
   founder_order <- match(founder_ids, supplied_ids)
   founder_positions <- match(founder_ids, canonical)
@@ -671,7 +630,7 @@
       storage = "gsim marker-major one-bit phased haplotypes",
       founder_source = if (packed_founders) "caller-owned packed handles" else
         "caller-supplied byte matrices packed internally",
-      implementation_origin = attr(backend, "packed_origin", exact = TRUE),
+      implementation_origin = .gsim_packed_origin(),
       decoded_genotypes = return_genotypes
     ),
     memory = list(

@@ -1,11 +1,3 @@
-.href_backend <- function() {
-  gsim:::.gsim_packed_backend()
-}
-
-.href_metadata_backend <- function() {
-  gsim:::.gsim_metadata_backend()
-}
-
 .href_variants <- function(label, ids, position) {
   data.frame(
     chromosome = rep.int(label, length(ids)), variant_id = ids,
@@ -36,15 +28,15 @@
   panels
 }
 
-.href_write <- function(backend, metadata_backend, prefix, panels) {
+.href_write <- function(prefix, panels) {
   donors <- rownames(panels[[1L]]$h1)
   dataset <- gsim:::.gsim_hap_dataset_create(
-    backend, metadata_backend, prefix,
+    prefix,
     gsim:::.gsim_plink_sample_metadata(donors))
   for (label in names(panels)) {
     panel <- panels[[label]]
-    h1 <- gsim:::.gsim_packed_pack(backend, panel$h1)
-    h2 <- gsim:::.gsim_packed_pack(backend, panel$h2)
+    h1 <- gsim:::.gsim_packed_pack(panel$h1)
+    h2 <- gsim:::.gsim_packed_pack(panel$h2)
     gsim:::.gsim_hap_dataset_append(
       dataset, label, h1, h2,
       .href_variants(label, panel$ids, panel$position))
@@ -101,22 +93,20 @@
 }
 
 testthat::test_that("HAP-loaded packed donors exactly match both founder oracles", {
-  backend <- .href_backend()
-  metadata_backend <- .href_metadata_backend()
   root <- tempfile("hap-reference-")
   dir.create(root)
   on.exit(unlink(root, recursive = TRUE), add = TRUE)
   panels <- .href_panel()
   prefix <- file.path(root, "reference panel")
-  .href_write(backend, metadata_backend, prefix, panels)
-  reader <- gsim:::.gsim_hap_dataset_open(backend, metadata_backend, prefix)
+  .href_write(prefix, panels)
+  reader <- gsim:::.gsim_hap_dataset_open(prefix)
   on.exit(gsim:::.gsim_hap_dataset_close(reader), add = TRUE)
 
   panel <- panels[["Z-2"]]
   args <- .href_args(panel, "Z-2")
   raw <- .href_raw(panel, "Z-2", args)
   legacy <- do.call(gsim:::.gsim_hapnest_founders_packed_chromosome, c(
-    list(backend = backend, reference_haplotypes_h1 = panel$h1,
+    list(reference_haplotypes_h1 = panel$h1,
          reference_haplotypes_h2 = panel$h2), args,
     list(return_genotypes = TRUE, return_segments = TRUE)))
   loaded <- .href_simulate(reader, "Z-2", panel, args)
@@ -147,26 +137,26 @@ testthat::test_that("HAP-loaded packed donors exactly match both founder oracles
 
   generated_prefix <- file.path(root, "generated founders")
   generated_dataset <- gsim:::.gsim_hap_dataset_create(
-    backend, metadata_backend, generated_prefix,
+    generated_prefix,
     gsim:::.gsim_plink_sample_metadata(loaded$sample_ids))
   gsim:::.gsim_hap_dataset_append(
     generated_dataset, "Z-2", loaded$h1, loaded$h2,
     .href_variants("Z-2", panel$ids, panel$position))
   gsim:::.gsim_hap_dataset_finalize(generated_dataset)
   generated_reader <- gsim:::.gsim_hap_dataset_open(
-    backend, metadata_backend, generated_prefix)
+    generated_prefix)
   reloaded <- gsim:::.gsim_hap_dataset_load_chromosome(
     generated_reader, "Z-2")
   testthat::expect_identical(gsim:::.gsim_packed_unpack(reloaded$h1), raw$h1)
   testthat::expect_identical(gsim:::.gsim_packed_unpack(reloaded$h2), raw$h2)
   gsim:::.gsim_hap_dataset_close(generated_reader)
   bed <- gsim:::.gsim_bed_sink_create(
-    backend, file.path(root, "generated founders.bed"), loaded$sample_ids)
+    file.path(root, "generated founders.bed"), loaded$sample_ids)
   gsim:::.gsim_bed_sink_append(
     bed, "Z-2", loaded$h1, loaded$h2, loaded$variant_ids)
   bed_manifest <- gsim:::.gsim_bed_sink_finalize(bed)
   decoded <- gsim:::.gsim_packed_bed_read_all(
-    backend, bed_manifest$path, length(loaded$sample_ids),
+    bed_manifest$path, length(loaded$sample_ids),
     length(loaded$variant_ids), loaded$sample_ids, loaded$variant_ids)
   testthat::expect_identical(
     decoded, matrix(as.integer(raw$genotypes), nrow(raw$genotypes),
@@ -174,8 +164,6 @@ testthat::test_that("HAP-loaded packed donors exactly match both founder oracles
 })
 
 testthat::test_that("HAP-loaded copying retains strict phase specificity", {
-  backend <- .href_backend()
-  metadata_backend <- .href_metadata_backend()
   root <- tempfile("hap-phase-")
   dir.create(root)
   on.exit(unlink(root, recursive = TRUE), add = TRUE)
@@ -186,8 +174,8 @@ testthat::test_that("HAP-loaded copying retains strict phase specificity", {
                 position = seq(0, 1, length.out = 11L),
                 mutation = rep(1e12, 11L))
   prefix <- file.path(root, "phase")
-  .href_write(backend, metadata_backend, prefix, list(asym = panel))
-  reader <- gsim:::.gsim_hap_dataset_open(backend, metadata_backend, prefix)
+  .href_write(prefix, list(asym = panel))
+  reader <- gsim:::.gsim_hap_dataset_open(prefix)
   on.exit(gsim:::.gsim_hap_dataset_close(reader), add = TRUE)
   args <- list(
     donor_population = c(p2 = "P", p1 = "P"), ancestry_weights = c(P = 1),
@@ -202,15 +190,13 @@ testthat::test_that("HAP-loaded copying retains strict phase specificity", {
 })
 
 testthat::test_that("chromosome, batching, options, and handle lifetime are invariant", {
-  backend <- .href_backend()
-  metadata_backend <- .href_metadata_backend()
   root <- tempfile("hap-invariance-")
   dir.create(root)
   on.exit(unlink(root, recursive = TRUE), add = TRUE)
   panels <- .href_panel()
   multi <- file.path(root, "multi")
-  .href_write(backend, metadata_backend, multi, panels)
-  reader <- gsim:::.gsim_hap_dataset_open(backend, metadata_backend, multi)
+  .href_write(multi, panels)
+  reader <- gsim:::.gsim_hap_dataset_open(multi)
   forward <- lapply(names(panels), function(label) {
     .href_simulate(reader, label, panels[[label]], .href_args(panels[[label]], label))
   })
@@ -228,8 +214,8 @@ testthat::test_that("chromosome, batching, options, and handle lifetime are inva
                                reverse[[label]]$segments)
   }
   standalone <- file.path(root, "standalone")
-  .href_write(backend, metadata_backend, standalone, panels["01"])
-  one_reader <- gsim:::.gsim_hap_dataset_open(backend, metadata_backend, standalone)
+  .href_write(standalone, panels["01"])
+  one_reader <- gsim:::.gsim_hap_dataset_open(standalone)
   alone <- .href_simulate(one_reader, "01", panels[["01"]],
                           .href_args(panels[["01"]], "01"))
   gsim:::.gsim_hap_dataset_close(one_reader)
@@ -276,7 +262,7 @@ testthat::test_that("chromosome, batching, options, and handle lifetime are inva
   owned <- gsim:::.gsim_hap_dataset_load_chromosome(reader, "chrA")
   gsim:::.gsim_hap_dataset_close(reader)
   after_close <- do.call(gsim:::.gsim_hapnest_founders_packed_reference_chromosome,
-    c(list(backend = backend, reference_h1 = owned$h1, reference_h2 = owned$h2),
+    c(list(reference_h1 = owned$h1, reference_h2 = owned$h2),
       .href_args(panels$chrA, "chrA")))
   testthat::expect_identical(gsim:::.gsim_packed_unpack(after_close$h1),
                              gsim:::.gsim_packed_unpack(forward$chrA$h1))
@@ -287,16 +273,14 @@ testthat::test_that("chromosome, batching, options, and handle lifetime are inva
 })
 
 testthat::test_that("reference alignment validation rejects ambiguity", {
-  backend <- .href_backend()
-  metadata_backend <- .href_metadata_backend()
   root <- tempfile("hap-validation-")
   dir.create(root)
   on.exit(unlink(root, recursive = TRUE), add = TRUE)
   panels <- .href_panel(c(chrA = 9L))
   panel <- panels$chrA
   prefix <- file.path(root, "reference")
-  .href_write(backend, metadata_backend, prefix, panels)
-  reader <- gsim:::.gsim_hap_dataset_open(backend, metadata_backend, prefix)
+  .href_write(prefix, panels)
+  reader <- gsim:::.gsim_hap_dataset_open(prefix)
   on.exit(gsim:::.gsim_hap_dataset_close(reader), add = TRUE)
   args <- .href_args(panel, "chrA")
   bad <- args
@@ -333,10 +317,10 @@ testthat::test_that("reference alignment validation rejects ambiguity", {
   loaded <- gsim:::.gsim_hap_dataset_load_chromosome(reader, "chrA")
   wrong <- matrix(0, 4L, 8L,
                   dimnames = list(rownames(panel$h1), panel$ids[-1L]))
-  wrong_h2 <- gsim:::.gsim_packed_pack(backend, wrong)
+  wrong_h2 <- gsim:::.gsim_packed_pack(wrong)
   testthat::expect_error(do.call(
     gsim:::.gsim_hapnest_founders_packed_reference_chromosome,
-    c(list(backend = backend, reference_h1 = loaded$h1, reference_h2 = wrong_h2),
+    c(list(reference_h1 = loaded$h1, reference_h2 = wrong_h2),
       args)), "dimensions")
   gsim:::.gsim_packed_close(wrong_h2)
   gsim:::.gsim_packed_close(loaded$h1)
@@ -344,16 +328,14 @@ testthat::test_that("reference alignment validation rejects ambiguity", {
 })
 
 testthat::test_that("generated packed founders flow directly through pedigree, HAP, and BED", {
-  backend <- .href_backend()
-  metadata_backend <- .href_metadata_backend()
   root <- tempfile("hap-downstream-")
   dir.create(root)
   on.exit(unlink(root, recursive = TRUE), add = TRUE)
   panels <- .href_panel(c(chrP = 25L))
   panel <- panels$chrP
   prefix <- file.path(root, "reference")
-  .href_write(backend, metadata_backend, prefix, panels)
-  reader <- gsim:::.gsim_hap_dataset_open(backend, metadata_backend, prefix)
+  .href_write(prefix, panels)
+  reader <- gsim:::.gsim_hap_dataset_open(prefix)
   args <- .href_args(panel, "chrP", n = 5L, seed = 919)
   founders <- .href_simulate(reader, "chrP", panel, args,
                              return_genotypes = FALSE)
@@ -375,8 +357,7 @@ testthat::test_that("generated packed founders flow directly through pedigree, H
     genetic_position = seq(0, 8, length.out = ncol(panel$h1)),
     seed = 303L, return_genotypes = TRUE, return_crossovers = TRUE)
   packed <- do.call(gsim:::.gsim_pedigree_genotypes_packed_chromosome, c(
-    list(backend = backend,
-         founder_haplotypes = list(h1 = founders$h1, h2 = founders$h2)),
+    list(founder_haplotypes = list(h1 = founders$h1, h2 = founders$h2)),
     meiosis_args))
   raw <- do.call(gsim:::.gsim_pedigree_genotypes, c(
     list(founder_haplotypes = list(h1 = raw_founders$h1,
@@ -392,26 +373,26 @@ testthat::test_that("generated packed founders flow directly through pedigree, H
 
   generated_prefix <- file.path(root, "generated pedigree")
   dataset <- gsim:::.gsim_hap_dataset_create(
-    backend, metadata_backend, generated_prefix,
+    generated_prefix,
     gsim:::.gsim_plink_pedigree_metadata(pedigree))
   gsim:::.gsim_hap_dataset_append(
     dataset, "chrP", packed$h1, packed$h2,
     .href_variants("chrP", panel$ids, seq(0, 8, length.out = length(panel$ids))))
   gsim:::.gsim_hap_dataset_finalize(dataset)
   reread <- gsim:::.gsim_hap_dataset_open(
-    backend, metadata_backend, generated_prefix)
+    generated_prefix)
   loaded <- gsim:::.gsim_hap_dataset_load_chromosome(reread, "chrP")
   testthat::expect_identical(gsim:::.gsim_packed_unpack(loaded$h1), raw$h1)
   testthat::expect_identical(gsim:::.gsim_packed_unpack(loaded$h2), raw$h2)
   gsim:::.gsim_hap_dataset_close(reread)
 
   bed <- gsim:::.gsim_bed_sink_create(
-    backend, file.path(root, "generated.bed"), packed$sample_ids)
+    file.path(root, "generated.bed"), packed$sample_ids)
   gsim:::.gsim_bed_sink_append(
     bed, "chrP", packed$h1, packed$h2, packed$variant_ids)
   bed_manifest <- gsim:::.gsim_bed_sink_finalize(bed)
   decoded <- gsim:::.gsim_packed_bed_read_all(
-    backend, bed_manifest$path, length(packed$sample_ids),
+    bed_manifest$path, length(packed$sample_ids),
     length(packed$variant_ids), packed$sample_ids, packed$variant_ids)
   testthat::expect_identical(
     decoded,

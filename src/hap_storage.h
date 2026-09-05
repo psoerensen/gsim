@@ -1,7 +1,7 @@
-#ifndef GSIM_STANDALONE_HAP_HPP
-#define GSIM_STANDALONE_HAP_HPP
+#ifndef GSIM_HAP_STORAGE_H
+#define GSIM_HAP_STORAGE_H
 
-#include "standalone_packed.h"
+#include "packed_chromosome.h"
 
 #include <cstdint>
 #include <cstdio>

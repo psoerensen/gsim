@@ -1,5 +1,5 @@
-#ifndef GSIM_STANDALONE_ERROR_HPP
-#define GSIM_STANDALONE_ERROR_HPP
+#ifndef GSIM_NATIVE_ERROR_H
+#define GSIM_NATIVE_ERROR_H
 
 #include <stdexcept>
 #include <string>

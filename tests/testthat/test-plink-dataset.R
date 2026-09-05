@@ -1,11 +1,3 @@
-.ds_backend <- function() {
-  gsim:::.gsim_packed_backend()
-}
-
-.ds_metadata_backend <- function() {
-  gsim:::.gsim_metadata_backend()
-}
-
 .ds_variants <- function(ids, chromosome = "chrZ", cm = seq_along(ids) - 1,
                          bp = seq_along(ids), alt = rep("G", length(ids)),
                          ref = rep("A", length(ids))) {
@@ -17,9 +9,9 @@
   )
 }
 
-.ds_packed <- function(backend, h1, h2) {
-  list(h1 = gsim:::.gsim_packed_pack(backend, h1),
-       h2 = gsim:::.gsim_packed_pack(backend, h2))
+.ds_packed <- function(h1, h2) {
+  list(h1 = gsim:::.gsim_packed_pack(h1),
+       h2 = gsim:::.gsim_packed_pack(h2))
 }
 
 .ds_owned_files <- function(directory) {
@@ -28,7 +20,7 @@
              full.names = TRUE)
 }
 
-.ds_founder_fixture <- function(backend, chromosome = "founder", markers = 13L,
+.ds_founder_fixture <- function(chromosome = "founder", markers = 13L,
                                 n = 7L, seed = 1601L) {
   marker <- seq_len(markers)
   reference_h1 <- outer(seq_len(4L), marker,
@@ -53,12 +45,12 @@
     raw = do.call(gsim:::.gsim_hapnest_founders,
                   c(args, list(return_genotypes = TRUE))),
     packed = do.call(gsim:::.gsim_hapnest_founders_packed_chromosome,
-                     c(list(backend = backend), args,
+                     c(args,
                        list(return_genotypes = FALSE)))
   )
 }
 
-.ds_pedigree_fixture <- function(backend, chromosome = "pedigree",
+.ds_pedigree_fixture <- function(chromosome = "pedigree",
                                  markers = 29L, seed = 812L) {
   tab <- data.frame(
     animal = c("S", "D", "D2", "S2", "C", "FS", "PHS", "MHS", "G", "L"),
@@ -89,14 +81,12 @@
     raw = do.call(gsim:::.gsim_pedigree_genotypes,
                   c(args, list(return_genotypes = TRUE))),
     packed = do.call(gsim:::.gsim_pedigree_genotypes_packed_chromosome,
-                     c(list(backend = backend), args,
+                     c(args,
                        list(return_genotypes = FALSE)))
   )
 }
 
 testthat::test_that("dataset freezes exact BED, BIM, FAM, and allele bytes", {
-  backend <- .ds_backend()
-  metadata_backend <- .ds_metadata_backend()
   root <- tempfile("plink-exact-")
   dir.create(root)
   directory <- file.path(root, "directory with spaces")
@@ -110,9 +100,9 @@ testthat::test_that("dataset freezes exact BED, BIM, FAM, and allele bytes", {
   h1 <- matrix(as.raw(c(0, 0, 1, 1)), 4L, 1L,
                dimnames = list(ids, "v1"))
   h2 <- matrix(as.raw(c(0, 1, 0, 1)), 4L, 1L, dimnames = dimnames(h1))
-  packed <- .ds_packed(backend, h1, h2)
+  packed <- .ds_packed(h1, h2)
   dataset <- gsim:::.gsim_plink_dataset_create(
-    backend, metadata_backend, file.path(directory, "dæta set"), samples,
+    file.path(directory, "dæta set"), samples,
     provenance = list(seed = 1L, source = "hand fixture")
   )
   gsim:::.gsim_plink_dataset_append(
@@ -136,7 +126,7 @@ testthat::test_that("dataset freezes exact BED, BIM, FAM, and allele bytes", {
     ))
   )
   decoded <- gsim:::.gsim_packed_bed_read_all(
-    backend, manifest$paths[["bed"]], 4L, 1L, ids, "v1"
+    manifest$paths[["bed"]], 4L, 1L, ids, "v1"
   )
   testthat::expect_identical(decoded, matrix(c(0L, 1L, 1L, 2L), 4L, 1L,
                                              dimnames = list(ids, "v1")))
@@ -150,8 +140,6 @@ testthat::test_that("dataset freezes exact BED, BIM, FAM, and allele bytes", {
 })
 
 testthat::test_that("BIM validation rejects ambiguous identity, maps, and alleles", {
-  backend <- .ds_backend()
-  metadata_backend <- .ds_metadata_backend()
   directory <- tempfile("plink-bim-")
   dir.create(directory)
   on.exit(unlink(directory, recursive = TRUE), add = TRUE)
@@ -159,9 +147,9 @@ testthat::test_that("BIM validation rejects ambiguous identity, maps, and allele
   samples <- gsim:::.gsim_plink_sample_metadata(ids)
   h <- matrix(as.raw(c(0, 1, 1, 0)), 2L, 2L,
               dimnames = list(ids, c("v1", "v2")))
-  packed <- .ds_packed(backend, h, h)
+  packed <- .ds_packed(h, h)
   make <- function(name) gsim:::.gsim_plink_dataset_create(
-    backend, metadata_backend, file.path(directory, name), samples
+    file.path(directory, name), samples
   )
   invalid <- list(
     duplicate = .ds_variants(c("v1", "v1")),
@@ -201,8 +189,6 @@ testthat::test_that("BIM validation rejects ambiguous identity, maps, and allele
 })
 
 testthat::test_that("FAM validation preserves pedigree roles and rejects ambiguity", {
-  backend <- .ds_backend()
-  metadata_backend <- .ds_metadata_backend()
   directory <- tempfile("plink-fam-")
   dir.create(directory)
   on.exit(unlink(directory, recursive = TRUE), add = TRUE)
@@ -213,7 +199,7 @@ testthat::test_that("FAM validation preserves pedigree roles and rejects ambigui
     sex = c(1L, 2L, 2L, 1L, 0L, 0L, 0L, 0L)
   )
   make <- function(metadata, name) gsim:::.gsim_plink_dataset_create(
-    backend, metadata_backend, file.path(directory, name), metadata
+    file.path(directory, name), metadata
   )
   testthat::expect_s3_class(make(valid, "valid"), "gsim_plink_dataset")
 
@@ -237,21 +223,19 @@ testthat::test_that("FAM validation preserves pedigree roles and rejects ambigui
   permuted <- valid[c(2L, 1L, 3:8), , drop = FALSE]
   dataset <- make(permuted, "permuted")
   testthat::expect_error(gsim:::.gsim_plink_dataset_append(
-    dataset, "x", gsim:::.gsim_packed_pack(backend, h),
-    gsim:::.gsim_packed_pack(backend, h), .ds_variants("v", "x")
+    dataset, "x", gsim:::.gsim_packed_pack(h),
+    gsim:::.gsim_packed_pack(h), .ds_variants("v", "x")
   ), "sample order")
   gsim:::.gsim_plink_dataset_cancel(dataset)
 })
 
 testthat::test_that("multi-chromosome BIM and BED order are literal and exact", {
-  backend <- .ds_backend()
-  metadata_backend <- .ds_metadata_backend()
   directory <- tempfile("plink-order-")
   dir.create(directory)
   on.exit(unlink(directory, recursive = TRUE), add = TRUE)
   ids <- paste0("i", 1:5)
   dataset <- gsim:::.gsim_plink_dataset_create(
-    backend, metadata_backend, file.path(directory, "ordered"),
+    file.path(directory, "ordered"),
     gsim:::.gsim_plink_sample_metadata(ids), buffer_variants = 1L
   )
   labels <- c("chrZ", "01", "CHR1")
@@ -271,7 +255,7 @@ testthat::test_that("multi-chromosome BIM and BED order are literal and exact", 
       rep(c("G", "T"), length.out = length(variants)),
       rep(c("A", "C"), length.out = length(variants))
     )
-    packed <- .ds_packed(backend, h1, h2)
+    packed <- .ds_packed(h1, h2)
     gsim:::.gsim_plink_dataset_append(
       dataset, labels[[block]], packed$h1, packed$h2, metadata
     )
@@ -291,7 +275,7 @@ testthat::test_that("multi-chromosome BIM and BED order are literal and exact", 
   }
   manifest <- gsim:::.gsim_plink_dataset_finalize(dataset)
   decoded <- gsim:::.gsim_packed_bed_read_all(
-    backend, manifest$paths[["bed"]], length(ids), sum(marker_counts), ids,
+    manifest$paths[["bed"]], length(ids), sum(marker_counts), ids,
     manifest$variant_ids
   )
   expected <- do.call(cbind, all_genotypes)
@@ -307,8 +291,6 @@ testthat::test_that("multi-chromosome BIM and BED order are literal and exact", 
 })
 
 testthat::test_that("triplet transaction stages, cancels, overwrites, and rolls back", {
-  backend <- .ds_backend()
-  metadata_backend <- .ds_metadata_backend()
   root <- tempfile("plink-transaction-")
   dir.create(root)
   directory <- file.path(root, "directory with spaces")
@@ -320,13 +302,13 @@ testthat::test_that("triplet transaction stages, cancels, overwrites, and rolls 
   samples <- gsim:::.gsim_plink_sample_metadata(ids)
   h1 <- matrix(as.raw(c(0, 1)), 2L, 1L, dimnames = list(ids, "v"))
   h2 <- matrix(as.raw(c(1, 1)), 2L, 1L, dimnames = dimnames(h1))
-  packed <- .ds_packed(backend, h1, h2)
+  packed <- .ds_packed(h1, h2)
   metadata <- .ds_variants("v", "u-β", 0.25, 9, "T", "C")
   prefix <- file.path(directory, "data set æ")
   targets <- paste0(prefix, c(".bed", ".bim", ".fam"))
   make <- function(overwrite = FALSE) {
     dataset <- gsim:::.gsim_plink_dataset_create(
-      backend, metadata_backend, prefix, samples, overwrite = overwrite
+      prefix, samples, overwrite = overwrite
     )
     gsim:::.gsim_plink_dataset_append(
       dataset, "u-β", packed$h1, packed$h2, metadata
@@ -342,7 +324,7 @@ testthat::test_that("triplet transaction stages, cancels, overwrites, and rolls 
                              charToRaw("keep"))
 
   before_bed <- gsim:::.gsim_plink_dataset_create(
-    backend, metadata_backend, file.path(directory, "invalid"), samples
+    file.path(directory, "invalid"), samples
   )
   bad <- metadata
   bad$variant_id <- "different"
@@ -397,15 +379,13 @@ testthat::test_that("triplet transaction stages, cancels, overwrites, and rolls 
 })
 
 testthat::test_that("founder and multigeneration datasets decode to both oracles", {
-  backend <- .ds_backend()
-  metadata_backend <- .ds_metadata_backend()
   directory <- tempfile("plink-parity-")
   dir.create(directory)
   on.exit(unlink(directory, recursive = TRUE), add = TRUE)
 
-  founder <- .ds_founder_fixture(backend)
+  founder <- .ds_founder_fixture()
   founder_data <- gsim:::.gsim_plink_dataset_create(
-    backend, metadata_backend, file.path(directory, "founder"),
+    file.path(directory, "founder"),
     gsim:::.gsim_plink_sample_metadata(founder$packed$sample_ids)
   )
   gsim:::.gsim_plink_dataset_append(
@@ -417,7 +397,7 @@ testthat::test_that("founder and multigeneration datasets decode to both oracles
   )
   founder_manifest <- gsim:::.gsim_plink_dataset_finalize(founder_data)
   founder_decoded <- gsim:::.gsim_packed_bed_read_all(
-    backend, founder_manifest$paths[["bed"]],
+    founder_manifest$paths[["bed"]],
     length(founder$packed$sample_ids), length(founder$packed$variant_ids),
     founder_manifest$sample_ids, founder_manifest$variant_ids
   )
@@ -429,13 +409,13 @@ testthat::test_that("founder and multigeneration datasets decode to both oracles
       founder$packed$h1, founder$packed$h2)), nrow(founder_decoded),
       dimnames = dimnames(founder_decoded)))
 
-  pedigree <- .ds_pedigree_fixture(backend)
+  pedigree <- .ds_pedigree_fixture()
   sample_metadata <- gsim:::.gsim_plink_pedigree_metadata(
     pedigree$pedigree,
     sex = c(1L, 2L, 2L, 1L, 1L, 0L, 0L, 0L, 0L, 0L)
   )
   pedigree_data <- gsim:::.gsim_plink_dataset_create(
-    backend, metadata_backend, file.path(directory, "pedigree"), sample_metadata
+    file.path(directory, "pedigree"), sample_metadata
   )
   pedigree_chromosome <- pedigree$packed$chromosome_blocks$chromosome[[1L]]
   gsim:::.gsim_plink_dataset_append(
@@ -447,7 +427,7 @@ testthat::test_that("founder and multigeneration datasets decode to both oracles
   )
   pedigree_manifest <- gsim:::.gsim_plink_dataset_finalize(pedigree_data)
   decoded <- gsim:::.gsim_packed_bed_read_all(
-    backend, pedigree_manifest$paths[["bed"]],
+    pedigree_manifest$paths[["bed"]],
     length(pedigree$packed$sample_ids), length(pedigree$packed$variant_ids),
     pedigree_manifest$sample_ids, pedigree_manifest$variant_ids
   )
@@ -487,8 +467,6 @@ testthat::test_that("founder and multigeneration datasets decode to both oracles
 })
 
 testthat::test_that("dataset memory accounting remains chromosome-wise", {
-  backend <- .ds_backend()
-  metadata_backend <- .ds_metadata_backend()
   directory <- tempfile("plink-memory-")
   dir.create(directory)
   on.exit(unlink(directory, recursive = TRUE), add = TRUE)
@@ -496,7 +474,7 @@ testthat::test_that("dataset memory accounting remains chromosome-wise", {
   markers <- c(127L, 65L, 1L)
   ids <- paste0("i", seq_len(individuals))
   dataset <- gsim:::.gsim_plink_dataset_create(
-    backend, metadata_backend, file.path(directory, "bounded"),
+    file.path(directory, "bounded"),
     gsim:::.gsim_plink_sample_metadata(ids), buffer_variants = 7L
   )
   peak_packed <- 0
@@ -506,7 +484,7 @@ testthat::test_that("dataset memory accounting remains chromosome-wise", {
                  individuals, markers[[block]], dimnames = list(ids, variants))
     h2 <- matrix(as.raw(rep(c(1, 0, 0), length.out = individuals * markers[[block]])),
                  individuals, markers[[block]], dimnames = list(ids, variants))
-    packed <- .ds_packed(backend, h1, h2)
+    packed <- .ds_packed(h1, h2)
     packed_bytes <- unname(gsim:::.gsim_packed_info(packed$h1)[[4L]] +
                                gsim:::.gsim_packed_info(packed$h2)[[4L]])
     peak_packed <- max(peak_packed, packed_bytes)

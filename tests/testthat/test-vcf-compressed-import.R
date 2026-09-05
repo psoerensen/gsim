@@ -12,9 +12,9 @@
 }
 
 .vcfgz_load <- function(prefix, chromosome) {
-  packed <- gsim:::.gsim_packed_backend()
-  metadata <- gsim:::.gsim_metadata_backend()
-  reader <- gsim:::.gsim_hap_dataset_open(packed, metadata, prefix)
+  packed <- NULL
+  metadata <- NULL
+  reader <- gsim:::.gsim_hap_dataset_open(prefix)
   on.exit(gsim:::.gsim_hap_dataset_close(reader), add = TRUE)
   loaded <- gsim:::.gsim_hap_dataset_load_chromosome(reader, chromosome)
   on.exit({

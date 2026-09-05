@@ -1,11 +1,3 @@
-.hap_backend <- function() {
-  gsim:::.gsim_packed_backend()
-}
-
-.hap_metadata_backend <- function() {
-  gsim:::.gsim_metadata_backend()
-}
-
 .hap_variants <- function(chromosome, ids, offset = 0L) {
   n <- length(ids)
   data.frame(
@@ -20,9 +12,9 @@
   )
 }
 
-.hap_pack_pair <- function(backend, h1, h2) {
-  list(h1 = gsim:::.gsim_packed_pack(backend, h1),
-       h2 = gsim:::.gsim_packed_pack(backend, h2))
+.hap_pack_pair <- function(h1, h2) {
+  list(h1 = gsim:::.gsim_packed_pack(h1),
+       h2 = gsim:::.gsim_packed_pack(h2))
 }
 
 .hap_mendelian_errors <- function(h1, h2, alignment) {
@@ -37,8 +29,6 @@
 }
 
 testthat::test_that("HAP v1 writes exact header, ranges, and packed round trips", {
-  backend <- .hap_backend()
-  metadata_backend <- .hap_metadata_backend()
   root <- tempfile("hap-v1-")
   dir.create(root)
   on.exit(unlink(root, recursive = TRUE), add = TRUE)
@@ -49,7 +39,7 @@ testthat::test_that("HAP v1 writes exact header, ranges, and packed round trips"
   chromosomes <- list(`chr:10` = 3L, `01` = 1L, `Z-alt` = 5L)
   pairs <- list()
   dataset <- gsim:::.gsim_hap_dataset_create(
-    backend, metadata_backend, file.path(root, "dÃ¦ta set"), sample_metadata,
+    file.path(root, "dÃ¦ta set"), sample_metadata,
     provenance = list(seed = 17L, source = "hand packed fixture")
   )
   offset <- 0L
@@ -59,7 +49,7 @@ testthat::test_that("HAP v1 writes exact header, ranges, and packed round trips"
     h1 <- outer(seq_len(65L), seq_len(m), function(i, j) (i + j) %% 2L)
     h2 <- outer(seq_len(65L), seq_len(m), function(i, j) (i * 3L + j + 1L) %% 2L)
     dimnames(h1) <- dimnames(h2) <- list(samples, ids)
-    pairs[[label]] <- .hap_pack_pair(backend, h1, h2)
+    pairs[[label]] <- .hap_pack_pair(h1, h2)
     gsim:::.gsim_hap_dataset_append(
       dataset, label, pairs[[label]]$h1, pairs[[label]]$h2,
       .hap_variants(label, ids, offset)
@@ -84,7 +74,7 @@ testthat::test_that("HAP v1 writes exact header, ranges, and packed round trips"
   testthat::expect_match(manifest$implementation$metadata_origin, "33d6751")
 
   reader <- gsim:::.gsim_hap_dataset_open(
-    backend, metadata_backend, file.path(root, "dÃ¦ta set"))
+    file.path(root, "dÃ¦ta set"))
   inspected <- gsim:::.gsim_hap_dataset_inspect(reader)
   testthat::expect_identical(inspected$chromosomes$chromosome,
                              names(chromosomes))
@@ -115,8 +105,6 @@ testthat::test_that("HAP v1 writes exact header, ranges, and packed round trips"
 })
 
 testthat::test_that("HAP metadata alignment and lifecycle failures are strict", {
-  backend <- .hap_backend()
-  metadata_backend <- .hap_metadata_backend()
   root <- tempfile("hap-invalid-")
   dir.create(root)
   on.exit(unlink(root, recursive = TRUE), add = TRUE)
@@ -124,17 +112,17 @@ testthat::test_that("HAP metadata alignment and lifecycle failures are strict", 
   variants <- c("v1", "v2")
   h <- matrix(as.raw(c(0, 1, 0, 1, 0, 1)), 3L, 2L,
               dimnames = list(ids, variants))
-  phases <- .hap_pack_pair(backend, h, h)
+  phases <- .hap_pack_pair(h, h)
   samples <- gsim:::.gsim_plink_sample_metadata(ids)
 
   cancelled <- gsim:::.gsim_hap_dataset_create(
-    backend, metadata_backend, file.path(root, "cancelled"), samples)
+    file.path(root, "cancelled"), samples)
   gsim:::.gsim_hap_dataset_cancel(cancelled)
   testthat::expect_false(any(file.exists(
     paste0(file.path(root, "cancelled"), c(".hap", ".bim", ".fam")))))
 
   failed <- gsim:::.gsim_hap_dataset_create(
-    backend, metadata_backend, file.path(root, "failed"), samples)
+    file.path(root, "failed"), samples)
   gsim:::.gsim_hap_dataset_append(
     failed, "x", phases$h1, phases$h2, .hap_variants("x", variants))
   testthat::expect_error(
@@ -144,16 +132,16 @@ testthat::test_that("HAP metadata alignment and lifecycle failures are strict", 
     paste0(file.path(root, "failed"), c(".hap", ".bim", ".fam")))))
 
   good <- gsim:::.gsim_hap_dataset_create(
-    backend, metadata_backend, file.path(root, "good"), samples)
+    file.path(root, "good"), samples)
   gsim:::.gsim_hap_dataset_append(
     good, "x", phases$h1, phases$h2, .hap_variants("x", variants))
   manifest <- gsim:::.gsim_hap_dataset_finalize(good)
   testthat::expect_error(gsim:::.gsim_hap_dataset_create(
-    backend, metadata_backend, file.path(root, "good"), samples), "exists")
+    file.path(root, "good"), samples), "exists")
 
   old_bytes <- lapply(manifest$paths, readBin, what = "raw", n = 10000L)
   replacement <- gsim:::.gsim_hap_dataset_create(
-    backend, metadata_backend, file.path(root, "good"), samples,
+    file.path(root, "good"), samples,
     overwrite = TRUE)
   gsim:::.gsim_hap_dataset_append(
     replacement, "x", phases$h1, phases$h2, .hap_variants("x", variants))
@@ -164,7 +152,7 @@ testthat::test_that("HAP metadata alignment and lifecycle failures are strict", 
     lapply(manifest$paths, readBin, what = "raw", n = 10000L), old_bytes)
 
   replacement <- gsim:::.gsim_hap_dataset_create(
-    backend, metadata_backend, file.path(root, "good"), samples,
+    file.path(root, "good"), samples,
     overwrite = TRUE)
   gsim:::.gsim_hap_dataset_append(
     replacement, "x", phases$h1, phases$h2, .hap_variants("x", variants))
@@ -177,12 +165,10 @@ testthat::test_that("HAP metadata alignment and lifecycle failures are strict", 
   writeBin(c(fam_bytes, charToRaw("F\textra\t0\t0\t0\t-9\n")),
            replaced$paths[["fam"]])
   testthat::expect_error(gsim:::.gsim_hap_dataset_open(
-    backend, metadata_backend, file.path(root, "good")), "align")
+    file.path(root, "good")), "align")
 })
 
 testthat::test_that("founder and pedigree packed phases survive HAP and emit exact BED dosages", {
-  backend <- .hap_backend()
-  metadata_backend <- .hap_metadata_backend()
   root <- tempfile("hap-simulation-")
   dir.create(root)
   on.exit(unlink(root, recursive = TRUE), add = TRUE)
@@ -204,16 +190,16 @@ testthat::test_that("founder and pedigree packed phases survive HAP and emit exa
   raw_founder <- do.call(gsim:::.gsim_hapnest_founders,
                          c(founder_args, list(return_genotypes = TRUE)))
   packed_founder <- do.call(gsim:::.gsim_hapnest_founders_packed_chromosome,
-     c(list(backend = backend), founder_args, list(return_genotypes = FALSE)))
+     c(founder_args, list(return_genotypes = FALSE)))
   founder_samples <- gsim:::.gsim_plink_sample_metadata(packed_founder$sample_ids)
   founder_dataset <- gsim:::.gsim_hap_dataset_create(
-    backend, metadata_backend, file.path(root, "founders"), founder_samples)
+    file.path(root, "founders"), founder_samples)
   gsim:::.gsim_hap_dataset_append(
     founder_dataset, "founder", packed_founder$h1, packed_founder$h2,
     .hap_variants("founder", packed_founder$variant_ids))
   gsim:::.gsim_hap_dataset_finalize(founder_dataset)
   founder_reader <- gsim:::.gsim_hap_dataset_open(
-    backend, metadata_backend, file.path(root, "founders"))
+    file.path(root, "founders"))
   reloaded_founder <- gsim:::.gsim_hap_dataset_load_chromosome(
     founder_reader, "founder")
   testthat::expect_identical(gsim:::.gsim_packed_unpack(reloaded_founder$h1),
@@ -246,16 +232,16 @@ testthat::test_that("founder and pedigree packed phases survive HAP and emit exa
   raw_pedigree <- do.call(gsim:::.gsim_pedigree_genotypes,
                           c(meiosis_args, list(return_genotypes = TRUE)))
   packed_pedigree <- do.call(gsim:::.gsim_pedigree_genotypes_packed_chromosome,
-     c(list(backend = backend), meiosis_args, list(return_genotypes = FALSE)))
+     c(meiosis_args, list(return_genotypes = FALSE)))
   pedigree_samples <- gsim:::.gsim_plink_pedigree_metadata(pedigree)
   pedigree_dataset <- gsim:::.gsim_hap_dataset_create(
-    backend, metadata_backend, file.path(root, "pedigree"), pedigree_samples)
+    file.path(root, "pedigree"), pedigree_samples)
   gsim:::.gsim_hap_dataset_append(
     pedigree_dataset, "ped", packed_pedigree$h1, packed_pedigree$h2,
     .hap_variants("ped", pvars))
   gsim:::.gsim_hap_dataset_finalize(pedigree_dataset)
   pedigree_reader <- gsim:::.gsim_hap_dataset_open(
-    backend, metadata_backend, file.path(root, "pedigree"))
+    file.path(root, "pedigree"))
   reloaded <- gsim:::.gsim_hap_dataset_load_chromosome(pedigree_reader, "ped")
   loaded_h1 <- gsim:::.gsim_packed_unpack(reloaded$h1)
   loaded_h2 <- gsim:::.gsim_packed_unpack(reloaded$h2)
@@ -265,11 +251,11 @@ testthat::test_that("founder and pedigree packed phases survive HAP and emit exa
     loaded_h1, loaded_h2, raw_pedigree$pedigree_alignment), 0L)
 
   bed <- gsim:::.gsim_bed_sink_create(
-    backend, file.path(root, "reloaded.bed"), rownames(loaded_h1))
+    file.path(root, "reloaded.bed"), rownames(loaded_h1))
   gsim:::.gsim_bed_sink_append(bed, "ped", reloaded$h1, reloaded$h2, pvars)
   bed_manifest <- gsim:::.gsim_bed_sink_finalize(bed)
   decoded <- gsim:::.gsim_packed_bed_read_all(
-    backend, bed_manifest$path, nrow(loaded_h1), ncol(loaded_h1),
+    bed_manifest$path, nrow(loaded_h1), ncol(loaded_h1),
     rownames(loaded_h1), colnames(loaded_h1))
   expected_genotypes <- matrix(as.integer(raw_pedigree$genotypes),
                                nrow(raw_pedigree$genotypes),

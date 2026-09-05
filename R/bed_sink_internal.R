@@ -9,16 +9,12 @@
 }
 
 .gsim_bed_sink_create <- function(
-  backend,
   path,
   sample_ids,
   overwrite = FALSE,
   buffer_variants = 64L,
   provenance = list()
 ) {
-  if (!inherits(backend, "gsim_packed_backend")) {
-    .gsim_stop("backend must be created by .gsim_packed_backend().")
-  }
   if (!is.character(path) || length(path) != 1L || is.na(path) ||
       !nzchar(path)) {
     .gsim_stop("path must be one nonempty string.")
@@ -42,10 +38,9 @@
   }
   state <- new.env(parent = emptyenv())
   state$pointer <- .Call(
-    C_gsim_packed_bed_sink_create, backend, enc2utf8(path),
+    C_gsim_packed_bed_sink_create, enc2utf8(path),
     length(sample_ids), overwrite, buffer_variants
   )
-  state$backend <- backend
   state$path <- path
   state$sample_ids <- sample_ids
   state$chromosome <- character()
@@ -163,7 +158,7 @@
     ),
     implementation = list(
       engine = "gsim private native backend",
-      origin = attr(sink$backend, "packed_origin", exact = TRUE)
+      origin = .gsim_packed_origin()
     ),
     provenance = sink$provenance,
     metadata = list(
@@ -192,12 +187,12 @@
 
 # Bounded qualification helper. This deliberately materializes decoded calls
 # and is not used by the production sink.
-.gsim_packed_bed_read_all <- function(backend, path, individuals, variants,
+.gsim_packed_bed_read_all <- function(path, individuals, variants,
                                      sample_ids = NULL, variant_ids = NULL) {
   individuals <- .gsim_hapnest_integer_scalar(individuals, "individuals", 1)
   variants <- .gsim_hapnest_integer_scalar(variants, "variants", 1)
   out <- .Call(
-    C_gsim_packed_bed_read_all, backend, enc2utf8(path), individuals, variants
+    C_gsim_packed_bed_read_all, enc2utf8(path), individuals, variants
   )
   dimnames(out) <- list(sample_ids, variant_ids)
   out

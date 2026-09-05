@@ -1,7 +1,3 @@
-.gsim_public_backends <- function() {
-  list(packed = .gsim_packed_backend(), metadata = .gsim_metadata_backend())
-}
-
 .gsim_reference_descriptor <- function(reader, provenance = list()) {
   inspected <- .gsim_hap_dataset_inspect(reader)
   out <- list(
@@ -71,14 +67,13 @@ gsim_import_vcf <- function(
   overwrite = FALSE
 ) {
   unsupported <- match.arg(unsupported)
-  backend <- .gsim_public_backends()
   manifest <- .gsim_import_vcf_internal(
-    backend$packed, backend$metadata, vcf, map, output,
+    vcf, map, output,
     sample_metadata = sample_metadata, samples = samples,
     chromosome = chromosome, region = region, unsupported = unsupported,
     overwrite = overwrite
   )
-  reader <- .gsim_hap_dataset_open(backend$packed, backend$metadata, output)
+  reader <- .gsim_hap_dataset_open(output)
   on.exit(.gsim_hap_dataset_close(reader), add = TRUE)
   descriptor <- .gsim_reference_descriptor(reader, manifest$provenance)
   descriptor$import <- manifest$import
@@ -95,8 +90,7 @@ gsim_import_vcf <- function(
 #' @return A `gsim_reference` descriptor containing paths and stable identities.
 #' @export
 gsim_reference <- function(prefix) {
-  backend <- .gsim_public_backends()
-  reader <- .gsim_hap_dataset_open(backend$packed, backend$metadata, prefix)
+  reader <- .gsim_hap_dataset_open(prefix)
   on.exit(.gsim_hap_dataset_close(reader), add = TRUE)
   .gsim_reference_descriptor(
     reader, list(operation = "validated existing HAP/BIM/FAM reference")
@@ -159,10 +153,7 @@ gsim_reference <- function(prefix) {
     min(length(founder_ids),
         as.integer(((bounded_batch_size + 63L) %/% 64L) * 64L))
   }
-  backend <- .gsim_public_backends()
-  reader <- .gsim_hap_dataset_open(
-    backend$packed, backend$metadata, reference$prefix
-  )
+  reader <- .gsim_hap_dataset_open(reference$prefix)
   on.exit(try(.gsim_hap_dataset_close(reader), silent = TRUE), add = TRUE)
   populations <- .gsim_public_align(
     populations, reader$samples$individual_id, "populations"
@@ -181,7 +172,7 @@ gsim_reference <- function(prefix) {
     seed = seed, founder_ids = "explicit final order"
   )
   sink <- .gsim_hap_dataset_create(
-    backend$packed, backend$metadata, output, sample_metadata,
+    output, sample_metadata,
     overwrite, provenance
   )
   completed <- FALSE
@@ -211,7 +202,7 @@ gsim_reference <- function(prefix) {
       batch_ids <- founder_ids[individual_offset + seq_len(count)]
       batch_result <- local({
         batch <- .gsim_hapnest_founders_packed_reference_chromosome(
-          backend$packed, reference_handles$h1, reference_handles$h2,
+          reference_handles$h1, reference_handles$h2,
           stats::setNames(populations, reader$samples$individual_id),
           ancestry_weights, N, Ne, rho, unname(cm),
           unname(mutation_age[variants$variant_id]), count, seed, chromosome,
@@ -248,9 +239,7 @@ gsim_reference <- function(prefix) {
   }
   manifest <- .gsim_hap_dataset_finalize(sink)
   completed <- TRUE
-  output_reader <- .gsim_hap_dataset_open(
-    backend$packed, backend$metadata, output
-  )
+  output_reader <- .gsim_hap_dataset_open(output)
   on.exit(.gsim_hap_dataset_close(output_reader), add = TRUE)
   result <- .gsim_reference_descriptor(output_reader, provenance)
   result$manifest <- manifest
@@ -335,10 +324,7 @@ gsim_simulate_founders <- function(
   if (!inherits(pedigree, "gsim_pedigree")) {
     .gsim_stop("pedigree must be a gsim_pedigree object.")
   }
-  backend <- .gsim_public_backends()
-  reader <- .gsim_hap_dataset_open(
-    backend$packed, backend$metadata, founders$prefix
-  )
+  reader <- .gsim_hap_dataset_open(founders$prefix)
   on.exit(try(.gsim_hap_dataset_close(reader), silent = TRUE), add = TRUE)
   canonical <- as.character(pedigree$canonical_order)
   founder_ids <- .gsim_pedigree_founder_ids(pedigree)
@@ -366,11 +352,9 @@ gsim_simulate_founders <- function(
     seed = seed, output_format = format
   )
   sink <- if (format == "hap") {
-    .gsim_hap_dataset_create(backend$packed, backend$metadata, output,
-                             sample_metadata, overwrite, provenance)
+    .gsim_hap_dataset_create(output, sample_metadata, overwrite, provenance)
   } else {
-    .gsim_plink_dataset_create(backend$packed, backend$metadata, output,
-                               sample_metadata, overwrite,
+    .gsim_plink_dataset_create(output, sample_metadata, overwrite,
                                provenance = provenance)
   }
   completed <- FALSE
@@ -392,7 +376,7 @@ gsim_simulate_founders <- function(
       try(.gsim_packed_close(base$h2), silent = TRUE)
     }, add = TRUE)
     descendants <- .gsim_pedigree_genotypes_packed_chromosome(
-      backend$packed, pedigree, list(h1 = base$h1, h2 = base$h2),
+      pedigree, list(h1 = base$h1, h2 = base$h2),
       rep.int(chromosome, nrow(variants)),
       variants$genetic_position_cm / 100, seed,
       return_haplotypes = TRUE, return_genotypes = FALSE,

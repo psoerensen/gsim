@@ -1,7 +1,7 @@
-#ifndef GSIM_STANDALONE_BED_HPP
-#define GSIM_STANDALONE_BED_HPP
+#ifndef GSIM_BED_STORAGE_H
+#define GSIM_BED_STORAGE_H
 
-#include "standalone_packed.h"
+#include "packed_chromosome.h"
 
 #include <cstdint>
 #include <cstdio>

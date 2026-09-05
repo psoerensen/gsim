@@ -33,11 +33,9 @@ elapsed <- function(expression) {
 }
 seconds <- function(x) unname(x[["elapsed"]])
 
-backend <- gsim:::.gsim_packed_backend()
-metadata_backend <- gsim:::.gsim_metadata_backend()
 total_start <- proc.time()
 opened <- elapsed(gsim:::.gsim_hap_dataset_open(
-  backend, metadata_backend, reference_prefix
+  reference_prefix
 ))
 reader <- opened$value
 on.exit(try(gsim:::.gsim_hap_dataset_close(reader), silent = TRUE), add = TRUE)
@@ -62,7 +60,7 @@ sample_metadata <- gsim:::.gsim_plink_sample_metadata(
 )
 output_prefix <- file.path(output_dir, paste0("founders-t", threads))
 sink <- gsim:::.gsim_hap_dataset_create(
-  backend, metadata_backend, output_prefix, sample_metadata,
+  output_prefix, sample_metadata,
   overwrite = TRUE,
   provenance = list(operation = "parallel founder benchmark", threads = threads)
 )
@@ -82,7 +80,7 @@ starts <- seq.int(0L, founder_count - 1L, by = batch_size)
 for (individual_offset in starts) {
   count <- min(batch_size, founder_count - individual_offset)
   input <- gsim:::.gsim_hapnest_packed_reference_inputs(
-    backend, reference$h1, reference$h2, populations, c(P1 = 1),
+    reference$h1, reference$h2, populations, c(P1 = 1),
     c(P1 = length(reference_ids)), c(P1 = 10000), c(P1 = 0.02),
     variants$genetic_position_cm, mutation_age, count, seed, "22",
     return_genotypes = FALSE, return_segments = FALSE,
@@ -97,8 +95,8 @@ for (individual_offset in starts) {
   plan <- planned$value
   plan_seconds <- plan_seconds + seconds(planned$time)
   max_event_bytes <- max(max_event_bytes, as.numeric(object.size(plan)))
-  h1 <- gsim:::.gsim_packed_zero(backend, count, marker_count)
-  h2 <- gsim:::.gsim_packed_zero(backend, count, marker_count)
+  h1 <- gsim:::.gsim_packed_zero(count, marker_count)
+  h2 <- gsim:::.gsim_packed_zero(count, marker_count)
   materialized <- elapsed(.Call(
     materialize_symbol, h1, h2, reference$h1, reference$h2,
     plan$individual, plan$phase, plan$donor_individual, plan$start, plan$end,

@@ -1,10 +1,6 @@
-# Private metadata/VCF backend compiled into gsim.
-.gsim_metadata_backend <- function() {
-  pointer <- .Call(C_gsim_metadata_backend)
-  attr(pointer, "metadata_origin") <- "internalized contract from gmat 0.4.0 (33d6751)"
-  attr(pointer, "metadata_abi") <- NA_integer_
-  class(pointer) <- "gsim_metadata_backend"
-  pointer
+# Private metadata and VCF implementation compiled into gsim.
+.gsim_metadata_origin <- function() {
+  "internalized contract from gmat 0.4.0 (33d6751)"
 }
 
 .gsim_plink_sample_metadata <- function(
@@ -49,10 +45,7 @@
   )
 }
 
-.gsim_plink_validate_samples <- function(metadata_backend, metadata) {
-  if (!inherits(metadata_backend, "gsim_metadata_backend")) {
-    .gsim_stop("metadata_backend must be created by .gsim_metadata_backend().")
-  }
+.gsim_plink_validate_samples <- function(metadata) {
   if (!is.data.frame(metadata)) {
     .gsim_stop("sample_metadata must be a data frame.")
   }
@@ -92,7 +85,7 @@
     stringsAsFactors = FALSE
   )
   pointer <- .Call(
-    C_gsim_metadata_sample_create, metadata_backend, normalized$family_id,
+    C_gsim_metadata_sample_create, normalized$family_id,
     normalized$individual_id, normalized$paternal_id,
     normalized$maternal_id, normalized$sex
   )
@@ -153,9 +146,9 @@
   )
 }
 
-.gsim_metadata_variant_pointer <- function(metadata_backend, metadata) {
+.gsim_metadata_variant_pointer <- function(metadata) {
   .Call(
-    C_gsim_metadata_variant_create, metadata_backend, metadata$chromosome,
+    C_gsim_metadata_variant_create, metadata$chromosome,
     metadata$variant_id, metadata$genetic_position_cm,
     metadata$base_pair_position, metadata$alt, metadata$ref
   )
@@ -242,20 +235,13 @@
 }
 
 .gsim_plink_dataset_create <- function(
-  backend,
-  metadata_backend,
   prefix,
   sample_metadata,
   overwrite = FALSE,
   buffer_variants = 64L,
   provenance = list()
 ) {
-  if (!inherits(backend, "gsim_packed_backend")) {
-    .gsim_stop("backend must be created by .gsim_packed_backend().")
-  }
-  validated_samples <- .gsim_plink_validate_samples(
-    metadata_backend, sample_metadata
-  )
+  validated_samples <- .gsim_plink_validate_samples(sample_metadata)
   targets <- .gsim_plink_targets(prefix)
   overwrite <- .gsim_bed_sink_flag(overwrite, "overwrite")
   exists <- file.exists(targets)
@@ -274,12 +260,10 @@
                             names(targets))
   state <- new.env(parent = emptyenv())
   state$bed <- .gsim_bed_sink_create(
-    backend, staged[["bed"]], validated_samples$metadata$individual_id,
+    staged[["bed"]], validated_samples$metadata$individual_id,
     overwrite = FALSE, buffer_variants = buffer_variants,
     provenance = provenance
   )
-  state$backend <- backend
-  state$metadata_backend <- metadata_backend
   state$sample_metadata <- validated_samples$metadata
   state$sample_pointer <- validated_samples$pointer
   state$targets <- targets
@@ -311,7 +295,7 @@
     .gsim_stop("Variant metadata order must exactly match packed H1/H2 IDs.")
   }
   # Validate the chromosome metadata before any BED record is appended.
-  invisible(.gsim_metadata_variant_pointer(dataset$metadata_backend, metadata))
+  invisible(.gsim_metadata_variant_pointer(metadata))
   .gsim_bed_sink_append(
     dataset$bed, chromosome, h1, h2, metadata$variant_id
   )
@@ -351,9 +335,7 @@
 
   variants <- do.call(rbind, dataset$variant_metadata)
   rownames(variants) <- NULL
-  variant_pointer <- .gsim_metadata_variant_pointer(
-    dataset$metadata_backend, variants
-  )
+  variant_pointer <- .gsim_metadata_variant_pointer(variants)
   bed_manifest <- .gsim_bed_sink_finalize(dataset$bed)
   if (.test_fail_stage == "after_bed") {
     .gsim_stop("injected failure after BED completion")
@@ -411,8 +393,8 @@
     allele_orientation = "bit 1 = ALT = BIM A1; bit 0 = REF = BIM A2",
     implementation = list(
       engine = "gsim private native backend",
-      packed_origin = attr(dataset$backend, "packed_origin", exact = TRUE),
-      metadata_origin = attr(dataset$metadata_backend, "metadata_origin", exact = TRUE)
+      packed_origin = .gsim_packed_origin(),
+      metadata_origin = .gsim_metadata_origin()
     ),
     provenance = dataset$provenance,
     publication_status = "published",

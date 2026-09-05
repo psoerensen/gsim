@@ -1,5 +1,5 @@
-#ifndef GSIM_STANDALONE_PACKED_HPP
-#define GSIM_STANDALONE_PACKED_HPP
+#ifndef GSIM_PACKED_CHROMOSOME_H
+#define GSIM_PACKED_CHROMOSOME_H
 
 #include <cstddef>
 #include <cstdint>
@@ -38,14 +38,6 @@ public:
                        std::uint64_t source_individual,
                        std::uint64_t first_marker,
                        std::uint64_t last_marker);
-    void copy_filtered_segment(std::uint64_t destination_individual,
-                               const PhasedHaplotypeMatrix& source,
-                               std::uint64_t source_individual,
-                               std::uint64_t first_marker,
-                               std::uint64_t last_marker,
-                               double coalescent_age,
-                               const double* mutation_age,
-                               std::uint64_t mutation_age_count);
     std::pair<std::uint64_t, std::uint64_t> copy_filtered_segment_counts(
         std::uint64_t destination_individual,
         const PhasedHaplotypeMatrix& source,
@@ -80,6 +72,18 @@ private:
     std::uint64_t words_per_marker_;
     std::vector<std::uint64_t> words_;
 };
+
+void materialize_founders(
+    PhasedHaplotypeMatrix& destination_h1,
+    PhasedHaplotypeMatrix& destination_h2,
+    const PhasedHaplotypeMatrix& reference_h1,
+    const PhasedHaplotypeMatrix& reference_h2,
+    const std::uint64_t* destination, const std::uint32_t* phase,
+    const std::uint64_t* donor, const std::uint64_t* first,
+    const std::uint64_t* last, const double* age, std::uint64_t event_count,
+    const double* mutation, std::uint64_t mutation_count,
+    std::uint32_t requested_threads, std::uint64_t* copied,
+    std::uint64_t* retained);
 
 } // namespace gsim::native
 

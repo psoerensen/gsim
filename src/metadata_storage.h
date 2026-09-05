@@ -1,5 +1,5 @@
-#ifndef GSIM_STANDALONE_METADATA_HPP
-#define GSIM_STANDALONE_METADATA_HPP
+#ifndef GSIM_METADATA_STORAGE_H
+#define GSIM_METADATA_STORAGE_H
 
 #include <cstdint>
 #include <string>

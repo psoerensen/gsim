@@ -1,7 +1,7 @@
 .vcf_backends <- function() {
   list(
-    gbits = gsim:::.gsim_packed_backend(),
-    gmat = gsim:::.gsim_metadata_backend()
+    gbits = NULL,
+    gmat = NULL
   )
 }
 
@@ -34,16 +34,14 @@ testthat::test_that("strict VCF import preserves exact phase and metadata", {
   )
   set.seed(991)
   before <- .Random.seed
-  first <- gsim:::.gsim_import_vcf_internal(
-    backend$gbits, backend$gmat, vcf, map, file.path(root, "reference"),
+  first <- gsim:::.gsim_import_vcf_internal(vcf, map, file.path(root, "reference"),
     samples
   )
   testthat::expect_identical(.Random.seed, before)
   testthat::expect_identical(first$sample_ids, c("s1", "s2"))
   testthat::expect_identical(first$variant_ids, c("z:10:A:G", "v2", "v3"))
   testthat::expect_identical(first$import$generated_variant_id_count, 1L)
-  reader <- gsim:::.gsim_hap_dataset_open(
-    backend$gbits, backend$gmat, file.path(root, "reference"))
+  reader <- gsim:::.gsim_hap_dataset_open(file.path(root, "reference"))
   z <- gsim:::.gsim_hap_dataset_load_chromosome(reader, "z")
   two <- gsim:::.gsim_hap_dataset_load_chromosome(reader, "2")
   testthat::expect_identical(
@@ -73,8 +71,7 @@ testthat::test_that("strict VCF import preserves exact phase and metadata", {
   gsim:::.gsim_packed_close(two$h1); gsim:::.gsim_packed_close(two$h2)
   gsim:::.gsim_hap_dataset_close(reader)
 
-  second <- gsim:::.gsim_import_vcf_internal(
-    backend$gbits, backend$gmat, vcf, map, file.path(root, "repeat"), samples
+  second <- gsim:::.gsim_import_vcf_internal(vcf, map, file.path(root, "repeat"), samples
   )
   testthat::expect_identical(readBin(first$paths[["hap"]], "raw", 10000),
                              readBin(second$paths[["hap"]], "raw", 10000))
@@ -93,12 +90,10 @@ testthat::test_that("packed import handles word-boundary sample counts", {
     vcf <- file.path(root, paste0("n", n, ".vcf"))
     .vcf_write(vcf, paste(c("1", "1", "v", "A", "C", ".", ".", ".",
                             "GT", gt), collapse = "\t"), ids)
-    manifest <- gsim:::.gsim_import_vcf_internal(
-      backend$gbits, backend$gmat, vcf,
+    manifest <- gsim:::.gsim_import_vcf_internal(vcf,
       data.frame(chromosome = "1", variant_id = "v",
                  genetic_position_cm = 0), file.path(root, paste0("out", n)))
-    reader <- gsim:::.gsim_hap_dataset_open(
-      backend$gbits, backend$gmat, sub("\\.hap$", "", manifest$paths[["hap"]]))
+    reader <- gsim:::.gsim_hap_dataset_open(sub("\\.hap$", "", manifest$paths[["hap"]]))
     loaded <- gsim:::.gsim_hap_dataset_load_chromosome(reader, "1")
     expected_h1 <- as.raw(as.integer(substr(gt, 1, 1)))
     expected_h2 <- as.raw(as.integer(substr(gt, 3, 3)))
@@ -137,40 +132,40 @@ testthat::test_that("strict VCF parser rejects every excluded call class", {
   for (name in names(bad)) {
     path <- file.path(root, paste0(name, ".vcf"))
     .vcf_write(path, bad[[name]], "s")
-    testthat::expect_error(gsim:::.gsim_vcf_reader_open(backend$gmat, path),
+    testthat::expect_error(gsim:::.gsim_vcf_reader_open(path),
                            "VCF", info = name)
   }
   duplicate_samples <- file.path(root, "dup-samples.vcf")
   .vcf_write(duplicate_samples,
              "1\t1\tv\tA\tG\t.\t.\t.\tGT\t0|0\t1|1", c("s", "s"))
   testthat::expect_error(
-    gsim:::.gsim_vcf_reader_open(backend$gmat, duplicate_samples), "sample IDs")
+    gsim:::.gsim_vcf_reader_open(duplicate_samples), "sample IDs")
   disjoint <- file.path(root, "disjoint.vcf")
   .vcf_write(disjoint, c(
     "1\t1\tv1\tA\tG\t.\t.\t.\tGT\t0|0",
     "2\t1\tv2\tA\tG\t.\t.\t.\tGT\t0|0",
     "1\t2\tv3\tA\tG\t.\t.\t.\tGT\t0|0"), "s")
-  testthat::expect_error(gsim:::.gsim_vcf_reader_open(backend$gmat, disjoint),
+  testthat::expect_error(gsim:::.gsim_vcf_reader_open(disjoint),
                          "disjoint")
   duplicate_id <- file.path(root, "dup-id.vcf")
   .vcf_write(duplicate_id, c(
     "1\t1\tv\tA\tG\t.\t.\t.\tGT\t0|0",
     "1\t2\tv\tC\tT\t.\t.\t.\tGT\t0|0"), "s")
-  testthat::expect_error(gsim:::.gsim_vcf_reader_open(backend$gmat, duplicate_id),
+  testthat::expect_error(gsim:::.gsim_vcf_reader_open(duplicate_id),
                          "duplicate final variant")
   wrong_fields <- file.path(root, "wrong-fields.vcf")
   .vcf_write(wrong_fields, "1\t1\tv\tA\tG\t.\t.\t.\tGT\t0|0", c("s1", "s2"))
-  testthat::expect_error(gsim:::.gsim_vcf_reader_open(backend$gmat, wrong_fields),
+  testthat::expect_error(gsim:::.gsim_vcf_reader_open(wrong_fields),
                          "sample-field count")
   missing_fileformat <- file.path(root, "missing-fileformat.vcf")
   writeBin(charToRaw(paste0(
     "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ts\n",
     "1\t1\tv\tA\tG\t.\t.\t.\tGT\t0|0\n")), missing_fileformat)
   testthat::expect_error(
-    gsim:::.gsim_vcf_reader_open(backend$gmat, missing_fileformat), "fileformat")
+    gsim:::.gsim_vcf_reader_open(missing_fileformat), "fileformat")
   compressed <- file.path(root, "unsupported.vcf.gz")
   file.copy(duplicate_id, compressed)
-  testthat::expect_error(gsim:::.gsim_vcf_reader_open(backend$gmat, compressed),
+  testthat::expect_error(gsim:::.gsim_vcf_reader_open(compressed),
                          "duplicate final variant")
 })
 
@@ -182,18 +177,15 @@ testthat::test_that("map and publication failures leave no partial dataset", {
   vcf <- file.path(root, "x.vcf")
   .vcf_write(vcf, "1\t1\tv\tA\tG\t.\t.\t.\tGT\t0|1", "s")
   prefix <- file.path(root, "bad")
-  testthat::expect_error(gsim:::.gsim_import_vcf_internal(
-    backend$gbits, backend$gmat, vcf,
+  testthat::expect_error(gsim:::.gsim_import_vcf_internal(vcf,
     data.frame(chromosome = "1", variant_id = "other",
                genetic_position_cm = 0), prefix), "alignment")
   testthat::expect_false(any(file.exists(paste0(prefix, c(".hap", ".bim", ".fam")))))
-  testthat::expect_error(gsim:::.gsim_import_vcf_internal(
-    backend$gbits, backend$gmat, vcf,
+  testthat::expect_error(gsim:::.gsim_import_vcf_internal(vcf,
     data.frame(chromosome = "1", variant_id = "v",
                genetic_position_cm = -1), prefix), "nonnegative")
   testthat::expect_false(any(file.exists(paste0(prefix, c(".hap", ".bim", ".fam")))))
-  testthat::expect_error(gsim:::.gsim_import_vcf_internal(
-    backend$gbits, backend$gmat, vcf,
+  testthat::expect_error(gsim:::.gsim_import_vcf_internal(vcf,
     data.frame(chromosome = "1", variant_id = "v",
                genetic_position_cm = 0), prefix,
     data.frame(individual_id = c("s", "extra"))), "exactly once")

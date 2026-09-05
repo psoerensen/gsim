@@ -1,6 +1,6 @@
-#include "standalone_bed.h"
+#include "bed_storage.h"
 
-#include "standalone_error.h"
+#include "native_error.h"
 
 #include <algorithm>
 #include <atomic>

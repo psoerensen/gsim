@@ -1,7 +1,3 @@
-.bed_backend <- function() {
-  gsim:::.gsim_packed_backend()
-}
-
 .bed_expected <- function(genotypes) {
   stopifnot(is.matrix(genotypes))
   genotype_values <- matrix(as.integer(genotypes), nrow(genotypes), ncol(genotypes))
@@ -23,7 +19,7 @@
   output
 }
 
-.bed_founder_fixture <- function(backend, chromosome = "chrZ",
+.bed_founder_fixture <- function(chromosome = "chrZ",
                                  markers = 11L, n = 7L, seed = 1905) {
   marker <- seq_len(markers)
   h1 <- outer(seq_len(4L), marker,
@@ -48,12 +44,12 @@
     raw = do.call(gsim:::.gsim_hapnest_founders,
                   c(args, list(return_genotypes = TRUE))),
     packed = do.call(gsim:::.gsim_hapnest_founders_packed_chromosome,
-                     c(list(backend = backend), args,
+                     c(args,
                        list(return_genotypes = FALSE)))
   )
 }
 
-.bed_pedigree_fixture <- function(backend, chromosome = "chrP",
+.bed_pedigree_fixture <- function(chromosome = "chrP",
                                   markers = 19L, seed = 905) {
   tab <- data.frame(
     animal = c("S", "D", "D2", "S2", "C", "FS", "PHS", "MHS", "G", "L"),
@@ -83,15 +79,15 @@
     raw = do.call(gsim:::.gsim_pedigree_genotypes,
                   c(args, list(return_genotypes = TRUE))),
     packed = do.call(gsim:::.gsim_pedigree_genotypes_packed_chromosome,
-                     c(list(backend = backend), args,
+                     c(args,
                        list(return_genotypes = FALSE)))
   )
 }
 
-.write_one_bed <- function(backend, path, packed, chromosome,
+.write_one_bed <- function(path, packed, chromosome,
                            buffer_variants = 2L, overwrite = FALSE) {
   sink <- gsim:::.gsim_bed_sink_create(
-    backend, path, packed$sample_ids, overwrite = overwrite,
+    path, packed$sample_ids, overwrite = overwrite,
     buffer_variants = buffer_variants,
     provenance = list(seed = packed$settings$seed, model = packed$settings$model)
   )
@@ -102,7 +98,6 @@
 }
 
 testthat::test_that("R sink preserves hand-calculated SNP-major bytes", {
-  backend <- .bed_backend()
   samples <- paste0("i", 1:4)
   variants <- "v1"
   h1 <- matrix(as.raw(c(0, 0, 1, 0)), 4L, 1L,
@@ -110,17 +105,17 @@ testthat::test_that("R sink preserves hand-calculated SNP-major bytes", {
   h2 <- matrix(as.raw(c(0, 1, 1, 0)), 4L, 1L,
                dimnames = list(samples, variants))
   path <- tempfile(fileext = ".bed")
-  sink <- gsim:::.gsim_bed_sink_create(backend, path, samples,
+  sink <- gsim:::.gsim_bed_sink_create(path, samples,
                                        buffer_variants = 1L)
   gsim:::.gsim_bed_sink_append(
-    sink, "chr1", gsim:::.gsim_packed_pack(backend, h1),
-    gsim:::.gsim_packed_pack(backend, h2), variants
+    sink, "chr1", gsim:::.gsim_packed_pack(h1),
+    gsim:::.gsim_packed_pack(h2), variants
   )
   manifest <- gsim:::.gsim_bed_sink_finalize(sink)
   testthat::expect_identical(readBin(path, "raw", n = 99L),
                              as.raw(c(0x6c, 0x1b, 0x01, 0xcb)))
   testthat::expect_identical(
-    gsim:::.gsim_packed_bed_read_all(backend, path, 4L, 1L,
+    gsim:::.gsim_packed_bed_read_all(path, 4L, 1L,
                                     samples, variants),
     matrix(c(0L, 1L, 2L, 0L), 4L, 1L,
            dimnames = list(samples, variants))
@@ -134,18 +129,17 @@ testthat::test_that("R sink preserves hand-calculated SNP-major bytes", {
   set.seed(911)
   expected_rng <- runif(4)
   set.seed(911)
-  invisible(gsim:::.gsim_packed_bed_read_all(backend, path, 4L, 1L))
+  invisible(gsim:::.gsim_packed_bed_read_all(path, 4L, 1L))
   testthat::expect_identical(runif(4), expected_rng)
   unlink(path)
 })
 
 testthat::test_that("founder BED decode exactly matches both qualified oracles", {
-  backend <- .bed_backend()
-  fixture <- .bed_founder_fixture(backend)
+  fixture <- .bed_founder_fixture()
   path <- tempfile(fileext = ".bed")
-  manifest <- .write_one_bed(backend, path, fixture$packed, "chrZ", 1L)
+  manifest <- .write_one_bed(path, fixture$packed, "chrZ", 1L)
   decoded <- gsim:::.gsim_packed_bed_read_all(
-    backend, path, length(fixture$packed$sample_ids),
+    path, length(fixture$packed$sample_ids),
     length(fixture$packed$variant_ids), fixture$packed$sample_ids,
     fixture$packed$variant_ids
   )
@@ -177,13 +171,13 @@ testthat::test_that("founder BED decode exactly matches both qualified oracles",
                dimnames = list(paste0("p", 1:7), paste0("a", 1:3)))
   h2 <- matrix(as.raw(1), 7L, 3L, dimnames = dimnames(h1))
   asymmetric <- list(
-    h1 = gsim:::.gsim_packed_pack(backend, h1),
-    h2 = gsim:::.gsim_packed_pack(backend, h2),
+    h1 = gsim:::.gsim_packed_pack(h1),
+    h2 = gsim:::.gsim_packed_pack(h2),
     sample_ids = rownames(h1), variant_ids = colnames(h1),
     settings = list(seed = 1, model = "phase-asymmetric fixture")
   )
   path <- tempfile(fileext = ".bed")
-  .write_one_bed(backend, path, asymmetric, "asym", 2L)
+  .write_one_bed(path, asymmetric, "asym", 2L)
   testthat::expect_identical(readBin(path, "raw", n = 99L),
                              as.raw(c(0x6c, 0x1b, 0x01,
                                       rep(c(0xaa, 0x2a), 3L))))
@@ -191,12 +185,11 @@ testthat::test_that("founder BED decode exactly matches both qualified oracles",
 })
 
 testthat::test_that("multigenerational pedigree BED has zero exact mismatches", {
-  backend <- .bed_backend()
-  fixture <- .bed_pedigree_fixture(backend)
+  fixture <- .bed_pedigree_fixture()
   path <- tempfile(fileext = ".bed")
-  manifest <- .write_one_bed(backend, path, fixture$packed, "chrP", 3L)
+  manifest <- .write_one_bed(path, fixture$packed, "chrP", 3L)
   decoded <- gsim:::.gsim_packed_bed_read_all(
-    backend, path, length(fixture$packed$sample_ids),
+    path, length(fixture$packed$sample_ids),
     length(fixture$packed$variant_ids), fixture$packed$sample_ids,
     fixture$packed$variant_ids
   )
@@ -217,20 +210,19 @@ testthat::test_that("multigenerational pedigree BED has zero exact mismatches", 
 })
 
 testthat::test_that("three chromosomes append exactly in declared order", {
-  backend <- .bed_backend()
   labels <- c("chrZ", "01", "CHR1")
   marker_counts <- c(1L, 5L, 3L)
 
   write_order <- function(order, path, capacity) {
     sink <- gsim:::.gsim_bed_sink_create(
-      backend, path, paste0("syn", seq_len(7L)),
+      path, paste0("syn", seq_len(7L)),
       buffer_variants = capacity,
       provenance = list(seed = 410, chromosome_identity = "exact UTF-8 label")
     )
     raw <- list()
     for (label in order) {
       value <- .bed_founder_fixture(
-        backend, label, marker_counts[[match(label, labels)]], n = 7L, seed = 410
+        label, marker_counts[[match(label, labels)]], n = 7L, seed = 410
       )
       gsim:::.gsim_bed_sink_append(
         sink, label, value$packed$h1, value$packed$h2,
@@ -264,7 +256,7 @@ testthat::test_that("three chromosomes append exactly in declared order", {
                              .bed_expected(reverse$expected))
   testthat::expect_identical(
     gsim:::.gsim_packed_bed_read_all(
-      backend, reverse_path, 7L, sum(marker_counts),
+      reverse_path, 7L, sum(marker_counts),
       reverse$manifest$sample_ids, reverse$manifest$variant_ids
     ),
     matrix(as.integer(reverse$expected), 7L,
@@ -279,7 +271,6 @@ testthat::test_that("three chromosomes append exactly in declared order", {
 })
 
 testthat::test_that("R sink validation and transactional filesystem behavior are explicit", {
-  backend <- .bed_backend()
   directory <- tempfile("gsim_bed_sink_")
   dir.create(directory)
   on.exit(unlink(directory, recursive = TRUE), add = TRUE)
@@ -289,10 +280,10 @@ testthat::test_that("R sink validation and transactional filesystem behavior are
   h1 <- matrix(as.raw(c(0, 1)), 2L, 1L,
                dimnames = list(samples, variants))
   h2 <- matrix(as.raw(c(1, 1)), 2L, 1L, dimnames = dimnames(h1))
-  p1 <- gsim:::.gsim_packed_pack(backend, h1)
-  p2 <- gsim:::.gsim_packed_pack(backend, h2)
+  p1 <- gsim:::.gsim_packed_pack(h1)
+  p2 <- gsim:::.gsim_packed_pack(h2)
 
-  sink <- gsim:::.gsim_bed_sink_create(backend, path, samples,
+  sink <- gsim:::.gsim_bed_sink_create(path, samples,
                                        buffer_variants = 1L)
   testthat::expect_false(file.exists(path))
   testthat::expect_length(list.files(directory, pattern = "gsim\\.tmp"), 1L)
@@ -303,11 +294,11 @@ testthat::test_that("R sink validation and transactional filesystem behavior are
 
   writeBin(as.raw(0x55), path)
   testthat::expect_error(
-    gsim:::.gsim_bed_sink_create(backend, path, samples),
+    gsim:::.gsim_bed_sink_create(path, samples),
     "overwrite is disabled"
   )
   testthat::expect_identical(readBin(path, "raw", n = 9L), as.raw(0x55))
-  sink <- gsim:::.gsim_bed_sink_create(backend, path, samples,
+  sink <- gsim:::.gsim_bed_sink_create(path, samples,
                                        overwrite = TRUE)
   gsim:::.gsim_bed_sink_append(sink, "x", p1, p2, variants)
   testthat::expect_identical(readBin(path, "raw", n = 9L), as.raw(0x55))
@@ -324,21 +315,20 @@ testthat::test_that("R sink validation and transactional filesystem behavior are
 
   reordered <- h1[2:1, , drop = FALSE]
   sink2 <- gsim:::.gsim_bed_sink_create(
-    backend, file.path(directory, "order.bed"), samples
+    file.path(directory, "order.bed"), samples
   )
   testthat::expect_error(gsim:::.gsim_bed_sink_append(
-    sink2, "x", gsim:::.gsim_packed_pack(backend, reordered), p2, variants
+    sink2, "x", gsim:::.gsim_packed_pack(reordered), p2, variants
   ), "sample order")
   gsim:::.gsim_bed_sink_cancel(sink2)
   testthat::expect_error(
     gsim:::.gsim_bed_sink_create(
-      backend, file.path(directory, "absent", "bad.bed"), samples
+      file.path(directory, "absent", "bad.bed"), samples
     ), "cannot find|mustWork|parent"
   )
 })
 
 testthat::test_that("writer memory is chromosome-local and throughput is linear-scale", {
-  backend <- .bed_backend()
   individuals <- 513L
   markers <- 2048L
   h1 <- matrix(as.raw(rep(c(0L, 1L, 1L, 0L),
@@ -350,11 +340,11 @@ testthat::test_that("writer memory is chromosome-local and throughput is linear-
   dimnames(h1) <- dimnames(h2) <- list(
     paste0("i", seq_len(individuals)), paste0("v", seq_len(markers))
   )
-  p1 <- gsim:::.gsim_packed_pack(backend, h1)
-  p2 <- gsim:::.gsim_packed_pack(backend, h2)
+  p1 <- gsim:::.gsim_packed_pack(h1)
+  p2 <- gsim:::.gsim_packed_pack(h2)
   path <- tempfile(fileext = ".bed")
   sink <- gsim:::.gsim_bed_sink_create(
-    backend, path, rownames(h1), buffer_variants = 64L
+    path, rownames(h1), buffer_variants = 64L
   )
   elapsed <- system.time(gsim:::.gsim_bed_sink_append(
     sink, "bounded", p1, p2, colnames(h1)

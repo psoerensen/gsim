@@ -1,6 +1,6 @@
-#include "standalone_metadata.h"
+#include "metadata_storage.h"
 
-#include "standalone_metadata_error.h"
+#include "metadata_error.h"
 
 #include <atomic>
 #include <cmath>

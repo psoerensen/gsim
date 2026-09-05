@@ -1,12 +1,20 @@
-#ifndef GSIM_STANDALONE_METADATA_ERROR_HPP
-#define GSIM_STANDALONE_METADATA_ERROR_HPP
+#ifndef GSIM_METADATA_ERROR_H
+#define GSIM_METADATA_ERROR_H
 
 #include <stdexcept>
 #include <string>
 
-#include "standalone_metadata_status.h"
-
 namespace gsim::native::metadata {
+
+enum class StatusCode {
+  success = 0,
+  invalid_argument,
+  invalid_extent,
+  dimension_mismatch,
+  non_finite_value,
+  invalid_sparse_structure,
+  internal_error
+};
 
 class Error : public std::runtime_error {
  public:

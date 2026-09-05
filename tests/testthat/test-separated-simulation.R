@@ -43,9 +43,9 @@
 }
 
 .separated_read_phases <- function(prefix) {
-  packed <- gsim:::.gsim_packed_backend()
-  metadata <- gsim:::.gsim_metadata_backend()
-  reader <- gsim:::.gsim_hap_dataset_open(packed, metadata, prefix)
+  packed <- NULL
+  metadata <- NULL
+  reader <- gsim:::.gsim_hap_dataset_open(prefix)
   on.exit(gsim:::.gsim_hap_dataset_close(reader), add = TRUE)
   setNames(lapply(reader$chromosome, function(chromosome) {
     phase <- gsim:::.gsim_hap_dataset_load_chromosome(reader, chromosome)
@@ -156,9 +156,9 @@ testthat::test_that("separated founder batches and threads are exactly invariant
   first_phases <- .separated_read_phases(file.path(root, "pedigree-hap"))
   second_phases <- .separated_read_phases(file.path(root, "pedigree-second"))
   testthat::expect_false(identical(first_phases, second_phases))
-  packed <- gsim:::.gsim_packed_backend()
+  packed <- NULL
   decoded <- gsim:::.gsim_packed_bed_read_all(
-    packed, pedigree_bed$paths[["bed"]], length(pedigree$canonical_order),
+    pedigree_bed$paths[["bed"]], length(pedigree$canonical_order),
     length(variant_ids)
   )
   expected <- do.call(cbind, lapply(first_phases, function(x) {

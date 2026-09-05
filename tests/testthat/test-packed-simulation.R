@@ -1,9 +1,5 @@
-.packed_backend <- function() {
-  gsim:::.gsim_packed_backend()
-}
-
 .packed_founder_fixture <- function(
-  backend, n = 12L, seed = 2026, individual_offset = 0L,
+  n = 12L, seed = 2026, individual_offset = 0L,
   chromosome = "chrZ", return_genotypes = TRUE, return_segments = TRUE
 ) {
   marker_count <- 17L
@@ -33,14 +29,14 @@
       return_genotypes = return_genotypes, return_segments = return_segments
     ))),
     packed = do.call(gsim:::.gsim_hapnest_founders_packed_chromosome,
-                     c(list(backend = backend), args, list(
+                     c(args, list(
                        return_genotypes = return_genotypes,
                        return_segments = return_segments
                      )))
   )
 }
 
-.packed_pedigree_fixture <- function(backend, seed = 811, batch_size = NULL,
+.packed_pedigree_fixture <- function(seed = 811, batch_size = NULL,
                                      chromosome = "chrM",
                                      return_genotypes = TRUE,
                                      return_crossovers = TRUE) {
@@ -77,7 +73,7 @@
   list(
     raw = do.call(gsim:::.gsim_pedigree_genotypes, args),
     packed = do.call(gsim:::.gsim_pedigree_genotypes_packed_chromosome,
-                     c(list(backend = backend), args))
+                     c(args))
   )
 }
 
@@ -92,17 +88,20 @@
   errors
 }
 
-testthat::test_that("packed backend is compiled into gsim", {
-  backend <- gsim:::.gsim_packed_backend()
-  testthat::expect_s3_class(backend, "gsim_packed_backend")
-  testthat::expect_null(attr(backend, "library", exact = TRUE))
+testthat::test_that("packed storage is direct and has no backend adapter", {
+  testthat::expect_false(exists(
+    ".gsim_packed_backend", envir = asNamespace("gsim"), inherits = FALSE
+  ))
+  value <- matrix(as.raw(c(0, 1)), 1L, 2L)
+  packed <- gsim:::.gsim_packed_pack(value)
+  testthat::expect_identical(gsim:::.gsim_packed_unpack(packed), value)
+  gsim:::.gsim_packed_close(packed)
 })
 
 testthat::test_that("packed words follow marker-major LSB-first storage", {
-  backend <- .packed_backend()
   values <- matrix(as.raw(0), 65L, 2L)
   values[c(1L, 64L, 65L), 1L] <- as.raw(1)
-  packed <- gsim:::.gsim_packed_pack(backend, values)
+  packed <- gsim:::.gsim_packed_pack(values)
   testthat::expect_identical(gsim:::.gsim_packed_unpack(packed), values)
   testthat::expect_identical(
     as.integer(gsim:::.gsim_packed_word(packed, 1L, 1L)),
@@ -117,8 +116,7 @@ testthat::test_that("packed words follow marker-major LSB-first storage", {
 })
 
 testthat::test_that("packed founder output and event records exactly match raw", {
-  backend <- .packed_backend()
-  fixture <- .packed_founder_fixture(backend)
+  fixture <- .packed_founder_fixture()
   packed_h1 <- gsim:::.gsim_packed_unpack(fixture$packed$h1)
   packed_h2 <- gsim:::.gsim_packed_unpack(fixture$packed$h2)
   testthat::expect_identical(packed_h1, fixture$raw$h1)
@@ -138,7 +136,7 @@ testthat::test_that("packed founder output and event records exactly match raw",
     c("d1", "d2"), paste0("asym", seq_len(9L))
   )
   asymmetric <- gsim:::.gsim_hapnest_founders_packed_chromosome(
-    backend, asymmetric_h1, asymmetric_h2, c("P", "P"), c(P = 1),
+    asymmetric_h1, asymmetric_h2, c("P", "P"), c(P = 1),
     c(P = 2), c(P = 2), c(P = 1), seq(0, 1, length.out = 9L),
     rep(1e12, 9L), 6L, 17, rep("phase", 9L)
   )
@@ -147,13 +145,12 @@ testthat::test_that("packed founder output and event records exactly match raw",
 })
 
 testthat::test_that("packed founder streams are reproducible and option invariant", {
-  backend <- .packed_backend()
-  first <- .packed_founder_fixture(backend, seed = 77)
-  same <- .packed_founder_fixture(backend, seed = 77, return_genotypes = FALSE)
+  first <- .packed_founder_fixture(seed = 77)
+  same <- .packed_founder_fixture(seed = 77, return_genotypes = FALSE)
   no_audit <- .packed_founder_fixture(
-    backend, seed = 77, return_genotypes = FALSE, return_segments = FALSE
+    seed = 77, return_genotypes = FALSE, return_segments = FALSE
   )
-  different <- .packed_founder_fixture(backend, seed = 78)
+  different <- .packed_founder_fixture(seed = 78)
   testthat::expect_identical(gsim:::.gsim_packed_unpack(first$packed$h1),
                              gsim:::.gsim_packed_unpack(same$packed$h1))
   testthat::expect_identical(gsim:::.gsim_packed_unpack(first$packed$h2),
@@ -169,9 +166,9 @@ testthat::test_that("packed founder streams are reproducible and option invarian
     gsim:::.gsim_packed_unpack(different$packed$h1)
   ))
 
-  batch1 <- .packed_founder_fixture(backend, n = 5L, seed = 77)
+  batch1 <- .packed_founder_fixture(n = 5L, seed = 77)
   batch2 <- .packed_founder_fixture(
-    backend, n = 7L, seed = 77, individual_offset = 5L
+    n = 7L, seed = 77, individual_offset = 5L
   )
   testthat::expect_identical(
     rbind(gsim:::.gsim_packed_unpack(batch1$packed$h1),
@@ -196,13 +193,12 @@ testthat::test_that("packed founder streams are reproducible and option invarian
   set.seed(103)
   expected_rng <- runif(4)
   set.seed(103)
-  invisible(.packed_founder_fixture(backend, n = 2L, seed = 77))
+  invisible(.packed_founder_fixture(n = 2L, seed = 77))
   testthat::expect_identical(runif(4), expected_rng)
 })
 
 testthat::test_that("packed pedigree meiosis exactly matches raw across generations", {
-  backend <- .packed_backend()
-  fixture <- .packed_pedigree_fixture(backend)
+  fixture <- .packed_pedigree_fixture()
   h1 <- gsim:::.gsim_packed_unpack(fixture$packed$h1)
   h2 <- gsim:::.gsim_packed_unpack(fixture$packed$h2)
   testthat::expect_identical(h1, fixture$raw$h1)
@@ -221,18 +217,17 @@ testthat::test_that("packed pedigree meiosis exactly matches raw across generati
 })
 
 testthat::test_that("fixed crossover materialization exactly matches the raw oracle", {
-  backend <- .packed_backend()
   positions <- 0:5
   h1_values <- matrix(as.raw(c(0, 1, 0, 1, 0, 1)), 1L)
   h2_values <- matrix(as.raw(c(1, 0, 1, 0, 1, 0)), 1L)
-  h1 <- gsim:::.gsim_packed_pack(backend, h1_values)
-  h2 <- gsim:::.gsim_packed_pack(backend, h2_values)
+  h1 <- gsim:::.gsim_packed_pack(h1_values)
+  h2 <- gsim:::.gsim_packed_pack(h2_values)
   cases <- list(
     zero = numeric(), between = 2.5, exact = 3,
     multiple = c(1, 3, 4.5)
   )
   for (crossovers in cases) {
-    destination <- gsim:::.gsim_packed_zero(backend, 1L, 6L)
+    destination <- gsim:::.gsim_packed_zero(1L, 6L)
     boundaries <- vapply(crossovers, function(x) {
       which(positions >= x)[[1L]] - 1L
     }, integer(1L))
@@ -249,14 +244,13 @@ testthat::test_that("fixed crossover materialization exactly matches the raw ora
 })
 
 testthat::test_that("packed pedigree streams are batch and option invariant", {
-  backend <- .packed_backend()
-  first <- .packed_pedigree_fixture(backend, seed = 909, batch_size = 1L)
-  same <- .packed_pedigree_fixture(backend, seed = 909, batch_size = 99L,
+  first <- .packed_pedigree_fixture(seed = 909, batch_size = 1L)
+  same <- .packed_pedigree_fixture(seed = 909, batch_size = 99L,
                                    return_genotypes = FALSE)
   no_audit <- .packed_pedigree_fixture(
-    backend, seed = 909, return_genotypes = FALSE, return_crossovers = FALSE
+    seed = 909, return_genotypes = FALSE, return_crossovers = FALSE
   )
-  different <- .packed_pedigree_fixture(backend, seed = 910)
+  different <- .packed_pedigree_fixture(seed = 910)
   testthat::expect_identical(gsim:::.gsim_packed_unpack(first$packed$h1),
                              gsim:::.gsim_packed_unpack(same$packed$h1))
   testthat::expect_identical(gsim:::.gsim_packed_unpack(first$packed$h2),
@@ -276,18 +270,17 @@ testthat::test_that("packed pedigree streams are batch and option invariant", {
   set.seed(81)
   expected_rng <- runif(5)
   set.seed(81)
-  invisible(.packed_pedigree_fixture(backend, seed = 909))
+  invisible(.packed_pedigree_fixture(seed = 909))
   testthat::expect_identical(runif(5), expected_rng)
 })
 
 testthat::test_that("three chromosomes are exactly independent of orchestration order", {
-  backend <- .packed_backend()
   labels <- c("chrZ", "01", "CHR1")
   forward <- lapply(labels, function(label) {
-    .packed_founder_fixture(backend, n = 5L, seed = 606, chromosome = label)
+    .packed_founder_fixture(n = 5L, seed = 606, chromosome = label)
   })
   reverse <- lapply(rev(labels), function(label) {
-    .packed_founder_fixture(backend, n = 5L, seed = 606, chromosome = label)
+    .packed_founder_fixture(n = 5L, seed = 606, chromosome = label)
   })
   names(forward) <- labels
   names(reverse) <- rev(labels)
@@ -305,10 +298,10 @@ testthat::test_that("three chromosomes are exactly independent of orchestration 
   }
 
   pedigree_forward <- lapply(labels, function(label) {
-    .packed_pedigree_fixture(backend, seed = 707, chromosome = label)
+    .packed_pedigree_fixture(seed = 707, chromosome = label)
   })
   pedigree_reverse <- lapply(rev(labels), function(label) {
-    .packed_pedigree_fixture(backend, seed = 707, chromosome = label)
+    .packed_pedigree_fixture(seed = 707, chromosome = label)
   })
   names(pedigree_forward) <- labels
   names(pedigree_reverse) <- rev(labels)
@@ -329,13 +322,12 @@ testthat::test_that("three chromosomes are exactly independent of orchestration 
 })
 
 testthat::test_that("bounded memory accounting shows one-bit payload reduction", {
-  backend <- .packed_backend()
   individuals <- 128L
   markers <- 129L
   values <- matrix(as.raw(rep(c(0L, 1L), length.out = individuals * markers)),
                    individuals, markers)
-  first <- gsim:::.gsim_packed_pack(backend, values)
-  second <- gsim:::.gsim_packed_pack(backend, values)
+  first <- gsim:::.gsim_packed_pack(values)
+  second <- gsim:::.gsim_packed_pack(values)
   raw_bytes <- 2 * length(values)
   packed_bytes <- gsim:::.gsim_packed_info(first)[[4L]] +
     gsim:::.gsim_packed_info(second)[[4L]]
@@ -343,7 +335,7 @@ testthat::test_that("bounded memory accounting shows one-bit payload reduction",
   testthat::expect_identical(unname(packed_bytes), 4128)
   testthat::expect_identical(raw_bytes / packed_bytes, 8)
 
-  ordinary <- .packed_founder_fixture(backend, return_genotypes = FALSE)
+  ordinary <- .packed_founder_fixture(return_genotypes = FALSE)
   testthat::expect_null(ordinary$packed$genotypes)
   testthat::expect_identical(
     ordinary$packed$memory$decoded_genotype_bytes, 0

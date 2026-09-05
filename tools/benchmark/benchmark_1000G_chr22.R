@@ -131,10 +131,8 @@ stage <- function(name, expression) {
 
 # Warm-up: native symbol loading and a tiny packed round trip only. It does not
 # scan the real VCF and is excluded from all reported timings.
-packed_backend <- gsim:::.gsim_packed_backend()
-metadata_backend <- gsim:::.gsim_metadata_backend()
 warm <- matrix(as.raw(c(0, 1, 1, 0)), 2L, 2L)
-warm_handle <- gsim:::.gsim_packed_pack(packed_backend, warm)
+warm_handle <- gsim:::.gsim_packed_pack(warm)
 stopifnot(identical(gsim:::.gsim_packed_unpack(warm_handle), warm))
 gsim:::.gsim_packed_close(warm_handle)
 gc()
@@ -147,7 +145,7 @@ reference <- stage("vcf_to_hap_total", gsim_import_vcf(
   overwrite = TRUE
 ))
 reader <- stage("prepared_hap_open", gsim:::.gsim_hap_dataset_open(
-  packed_backend, metadata_backend, reference_prefix
+  reference_prefix
 ))
 on.exit(try(gsim:::.gsim_hap_dataset_close(reader), silent = TRUE), add = TRUE)
 if (!identical(reader$samples$individual_id, selected_samples)) {
@@ -174,7 +172,7 @@ on.exit({
 }, add = TRUE)
 
 founder_input <- gsim:::.gsim_hapnest_packed_reference_inputs(
-  packed_backend, reference_handles$h1, reference_handles$h2,
+  reference_handles$h1, reference_handles$h2,
   unname(populations), c(P1 = 1), c(P1 = reference_count), c(P1 = Ne),
   c(P1 = rho), unname(positions_cm), unname(mutation_age), founder_count,
   seed, rep.int("22", marker_count), "hapnest", FALSE, TRUE, 0L
@@ -189,8 +187,7 @@ event_plan <- stage("founder_event_plan_only", .Call(
 ))
 
 founders <- stage("founder_plan_and_packed_materialization",
-  gsim:::.gsim_hapnest_founders_packed_reference_chromosome(
-    packed_backend, reference_handles$h1, reference_handles$h2,
+  gsim:::.gsim_hapnest_founders_packed_reference_chromosome(reference_handles$h1, reference_handles$h2,
     unname(populations), c(P1 = 1), c(P1 = reference_count), c(P1 = Ne),
     c(P1 = rho), unname(positions_cm), unname(mutation_age), founder_count,
     seed, "22", return_genotypes = FALSE, return_segments = TRUE
@@ -223,7 +220,7 @@ variants <- reader$variants
 founder_hap_prefix <- file.path(output_dir, "founders-hap")
 founder_hap <- stage("founder_hap_output", {
   sink <- gsim:::.gsim_hap_dataset_create(
-    packed_backend, metadata_backend, founder_hap_prefix, sample_metadata,
+    founder_hap_prefix, sample_metadata,
     overwrite = TRUE, provenance = list(benchmark = "1000G chr22"))
   gsim:::.gsim_hap_dataset_append(sink, "22", founders$h1, founders$h2,
                                   variants)
@@ -232,7 +229,7 @@ founder_hap <- stage("founder_hap_output", {
 founder_bed_prefix <- file.path(output_dir, "founders-bed")
 founder_bed <- stage("founder_bed_output", {
   sink <- gsim:::.gsim_plink_dataset_create(
-    packed_backend, metadata_backend, founder_bed_prefix, sample_metadata,
+    founder_bed_prefix, sample_metadata,
     overwrite = TRUE, provenance = list(benchmark = "1000G chr22"))
   gsim:::.gsim_plink_dataset_append(sink, "22", founders$h1, founders$h2,
                                     variants)
@@ -249,8 +246,7 @@ pedigree_founders <- pedigree$canonical_order[seq_len(founder_count)]
 founders$h1 <- gsim:::.gsim_packed_tag(founders$h1, pedigree_founders, variant_ids)
 founders$h2 <- gsim:::.gsim_packed_tag(founders$h2, pedigree_founders, variant_ids)
 descendants <- stage("packed_pedigree_meiosis",
-  gsim:::.gsim_pedigree_genotypes_packed_chromosome(
-    packed_backend, pedigree, list(h1 = founders$h1, h2 = founders$h2),
+  gsim:::.gsim_pedigree_genotypes_packed_chromosome(pedigree, list(h1 = founders$h1, h2 = founders$h2),
     rep.int("22", marker_count), variants$genetic_position_cm / 100, seed,
     return_haplotypes = TRUE, return_genotypes = FALSE,
     return_crossovers = TRUE
@@ -263,8 +259,7 @@ on.exit({
 repeat_reference <- stage("repeat_hap_load_chromosome",
   gsim:::.gsim_hap_dataset_load_chromosome(reader, "22"))
 repeat_founders <- stage("repeat_founder_simulation",
-  gsim:::.gsim_hapnest_founders_packed_reference_chromosome(
-    packed_backend, repeat_reference$h1, repeat_reference$h2,
+  gsim:::.gsim_hapnest_founders_packed_reference_chromosome(repeat_reference$h1, repeat_reference$h2,
     unname(populations), c(P1 = 1), c(P1 = reference_count), c(P1 = Ne),
     c(P1 = rho), unname(positions_cm), unname(mutation_age), founder_count,
     seed + 1, "22", return_genotypes = FALSE, return_segments = TRUE

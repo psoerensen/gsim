@@ -1,5 +1,5 @@
-#ifndef GSIM_STANDALONE_VCF_H
-#define GSIM_STANDALONE_VCF_H
+#ifndef GSIM_VCF_READER_H
+#define GSIM_VCF_READER_H
 
 #include <cstddef>
 #include <cstdint>

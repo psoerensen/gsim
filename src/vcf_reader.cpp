@@ -1,6 +1,6 @@
-#include "standalone_vcf.h"
+#include "vcf_reader.h"
 
-#include "standalone_metadata_error.h"
+#include "metadata_error.h"
 
 #include <zlib.h>
 

@@ -1,6 +1,6 @@
-#include "standalone_hap.h"
+#include "hap_storage.h"
 
-#include "standalone_error.h"
+#include "native_error.h"
 
 #include <algorithm>
 #include <array>

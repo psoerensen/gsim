@@ -132,3 +132,38 @@ costs before considering SIMD or a different storage schedule.
 Reproduce the measurement with `tools/benchmark/benchmark_parallel_founders.R`.
 It accepts only an external prepared-reference prefix and external output
 directory and never downloads data.
+
+## Version 0.12 consolidation check
+
+The 0.12 structural consolidation was checked separately on 2026-09-05 with a
+bounded synthetic prepared-HAP fixture: chromosome `22`, 64 reference samples,
+512 markers, 8,192 founders, batch size 1,024, `N=64`, `Ne=10000`, `rho=0.02`,
+mutation age `1e9`, and seed `20260905`. This fixture is deliberately a noisy
+refactor guard, not a replacement for the realistic 48,088-marker result above.
+The committed 0.11 package and consolidated 0.12 package were installed in
+separate libraries and run against the same reference and benchmark script.
+
+| Stage (seconds) | 0.11, 1 thread | 0.12, 1 thread | 0.11, 8 threads | 0.12, 8 threads |
+|---|---:|---:|---:|---:|
+| HAP open/load | 0.02 | 0.01 | 0.03 | 0.01 |
+| Event planning | 0.14 | 0.11 | 0.07 | 0.07 |
+| Packed materialization | 0.07 | 0.07 | 0.15 | 0.17 |
+| HAP initialization/write/finalize | 0.06 | 0.05 | 0.06 | 0.03 |
+| Total | 0.37 | 0.35 | 0.38 | 0.39 |
+
+All four outputs were exactly 1,048,688 bytes with MD5
+`f3a16479ad056fcc358d106c4b0e0609`. The analytical packed reference,
+maximum batch, and combined biological payloads were unchanged at 8,192,
+131,072, and 139,264 bytes. A 10 ms external sampler observed 128,106,496 and
+135,344,128 bytes for the committed and consolidated one-thread processes, and
+130,904,064 and 135,057,408 bytes with eight threads. These short-process peaks
+include R startup, event-plan R objects, allocator state, and sampling noise;
+the 3--6% difference did not reflect a changed biological allocation. The
+installed native DLL decreased from 1,537,536 to 1,483,776 bytes.
+
+At this scale worker startup dominates the 16 packed words in each batch, so
+the eight-thread numbers are not a scaling claim. The relevant consolidation
+gate is exact bytes with unchanged packed payload and no repeatable materializer
+regression: one-thread materialization was identical at the timer's 0.01-second
+resolution and total time changed from 0.37 to 0.35 seconds. The realistic
+benchmark above remains the evidence for thread scaling.

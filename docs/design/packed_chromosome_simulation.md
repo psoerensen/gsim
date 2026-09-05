@@ -1,4 +1,4 @@
-# Experimental chromosome-wise packed simulation
+# Chromosome-wise packed simulation
 
 ## Boundary and ownership
 
@@ -13,10 +13,9 @@ notice. Metadata and VCF components originated in our own `gmat` project at
 revision `33d6751abf00c41a15223459df7cae028d54b4b5` and are distributed as part
 of gsim under gsim's GPL-3 license. No external library is used.
 
-The interface is deliberately internal and chromosome-local:
+The R/native interface is deliberately private and chromosome-local:
 
 ```
-.gsim_packed_backend()
 .gsim_hapnest_founders_packed_chromosome(...)
 .gsim_pedigree_genotypes_packed_chromosome(...)
 .gsim_packed_unpack(haplotypes)       # bounded validation only
@@ -27,9 +26,11 @@ HAP-loaded packed reference handles now enter the same materializer directly;
 the additive integration and explicit ownership contract are frozen in
 `hap_reference_founders.md`.
 
-R external pointers own private packed handles in the package DLL. Finalizers
-close the matching object. There is no dynamic loader, external ABI, library
-path, environment-variable lookup, or fallback implementation.
+R external pointers directly own private `gsim::native` objects in the package
+DLL. One shared external-pointer helper provides type checking, ownership,
+finalization, and explicit close behavior. There is no function-pointer table,
+dynamic loader, external ABI, library path, environment-variable lookup, or
+fallback implementation.
 
 ## Shared deterministic event semantics
 

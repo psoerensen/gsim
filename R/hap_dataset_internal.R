@@ -16,11 +16,8 @@
                   c("hap", "bim", "fam"))
 }
 
-.gsim_hap_sink_create <- function(backend, path, sample_ids,
+.gsim_hap_sink_create <- function(path, sample_ids,
                                   overwrite = FALSE, provenance = list()) {
-  if (!inherits(backend, "gsim_packed_backend")) {
-    .gsim_stop("backend must be created by .gsim_packed_backend().")
-  }
   if (!is.character(path) || length(path) != 1L || is.na(path) || !nzchar(path)) {
     .gsim_stop("path must be one nonempty string.")
   }
@@ -34,9 +31,8 @@
   overwrite <- .gsim_bed_sink_flag(overwrite, "overwrite")
   if (!is.list(provenance)) .gsim_stop("provenance must be a list.")
   state <- new.env(parent = emptyenv())
-  state$pointer <- .Call(C_gsim_packed_hap_sink_create, backend, enc2utf8(path),
+  state$pointer <- .Call(C_gsim_packed_hap_sink_create, enc2utf8(path),
                          length(sample_ids), overwrite)
-  state$backend <- backend
   state$path <- path
   state$sample_ids <- sample_ids
   state$chromosome <- character()
@@ -191,10 +187,10 @@
   invisible(sink)
 }
 
-.gsim_hap_dataset_create <- function(backend, metadata_backend, prefix,
+.gsim_hap_dataset_create <- function(prefix,
                                      sample_metadata, overwrite = FALSE,
                                      provenance = list()) {
-  samples <- .gsim_plink_validate_samples(metadata_backend, sample_metadata)
+  samples <- .gsim_plink_validate_samples(sample_metadata)
   targets <- .gsim_hap_targets(prefix)
   overwrite <- .gsim_bed_sink_flag(overwrite, "overwrite")
   exists <- file.exists(targets)
@@ -211,11 +207,9 @@
                             names(targets))
   state <- new.env(parent = emptyenv())
   state$hap <- .gsim_hap_sink_create(
-    backend, staged[["hap"]], samples$metadata$individual_id,
+    staged[["hap"]], samples$metadata$individual_id,
     overwrite = FALSE, provenance = provenance
   )
-  state$backend <- backend
-  state$metadata_backend <- metadata_backend
   state$sample_metadata <- samples$metadata
   state$sample_pointer <- samples$pointer
   state$targets <- targets
@@ -244,7 +238,7 @@
       !identical(metadata$variant_id, attr(h2, "variant_ids", exact = TRUE))) {
     .gsim_stop("Variant metadata order must exactly match packed H1/H2 IDs.")
   }
-  invisible(.gsim_metadata_variant_pointer(dataset$metadata_backend, metadata))
+  invisible(.gsim_metadata_variant_pointer(metadata))
   .gsim_hap_sink_append(dataset$hap, chromosome, h1, h2, metadata$variant_id)
   dataset$variant_metadata[[length(dataset$variant_metadata) + 1L]] <- metadata
   invisible(dataset)
@@ -258,7 +252,7 @@
     .gsim_stop("dataset is not an open experimental phased dataset sink.")
   }
   metadata <- .gsim_plink_normalize_variants(chromosome, variant_metadata)
-  invisible(.gsim_metadata_variant_pointer(dataset$metadata_backend, metadata))
+  invisible(.gsim_metadata_variant_pointer(metadata))
   .gsim_hap_sink_begin_chromosome(
     dataset$hap, chromosome, nrow(metadata), metadata$variant_id
   )
@@ -304,7 +298,7 @@
   }, add = TRUE)
   variants <- do.call(rbind, dataset$variant_metadata)
   rownames(variants) <- NULL
-  variant_pointer <- .gsim_metadata_variant_pointer(dataset$metadata_backend, variants)
+  variant_pointer <- .gsim_metadata_variant_pointer(variants)
   hap_manifest <- .gsim_hap_sink_finalize(dataset$hap)
   if (.test_fail_stage == "after_hap") .gsim_stop("injected failure after HAP completion")
   bim_info <- .Call(C_gsim_metadata_write_bim, variant_pointer,
@@ -345,8 +339,8 @@
     allele_orientation = "bit 1 = ALT = BIM A1; bit 0 = REF = BIM A2",
     implementation = list(
       engine = "gsim private native backend",
-      packed_origin = attr(dataset$backend, "packed_origin", exact = TRUE),
-      metadata_origin = attr(dataset$metadata_backend, "metadata_origin", exact = TRUE)),
+      packed_origin = .gsim_packed_origin(),
+      metadata_origin = .gsim_metadata_origin()),
     provenance = dataset$provenance, publication_status = "published",
     transaction = "same-directory staging with backup-and-rollback publication"
   )
@@ -369,17 +363,13 @@
   invisible(dataset)
 }
 
-.gsim_hap_dataset_open <- function(backend, metadata_backend, prefix) {
-  if (!inherits(backend, "gsim_packed_backend") ||
-      !inherits(metadata_backend, "gsim_metadata_backend")) {
-    .gsim_stop("backend and metadata_backend must be private packed/metadata backends.")
-  }
+.gsim_hap_dataset_open <- function(prefix) {
   targets <- .gsim_hap_targets(prefix)
   if (!all(file.exists(targets))) {
     .gsim_stop("A complete HAP/BIM/FAM triplet is required.")
   }
-  bim <- .Call(C_gsim_metadata_read_bim, metadata_backend, enc2utf8(targets[["bim"]]))
-  fam <- .Call(C_gsim_metadata_read_fam, metadata_backend, enc2utf8(targets[["fam"]]))
+  bim <- .Call(C_gsim_metadata_read_bim, enc2utf8(targets[["bim"]]))
+  fam <- .Call(C_gsim_metadata_read_fam, enc2utf8(targets[["fam"]]))
   variants <- data.frame(
     chromosome = bim$chromosome, variant_id = bim$variant_id,
     genetic_position_cm = bim$genetic_position_cm,
@@ -390,7 +380,7 @@
     paternal_id = fam$paternal_id, maternal_id = fam$maternal_id,
     sex = fam$sex, phenotype = rep.int(NA_real_, length(fam$individual_id)),
     stringsAsFactors = FALSE)
-  pointer <- .Call(C_gsim_packed_hap_reader_open, backend, enc2utf8(targets[["hap"]]))
+  pointer <- .Call(C_gsim_packed_hap_reader_open, enc2utf8(targets[["hap"]]))
   info <- .Call(C_gsim_packed_hap_reader_info, pointer)
   runs <- rle(variants$chromosome)
   expected_start <- cumsum(c(0, head(runs$lengths, -1L)))
@@ -404,8 +394,6 @@
   }
   state <- new.env(parent = emptyenv())
   state$pointer <- pointer
-  state$backend <- backend
-  state$metadata_backend <- metadata_backend
   state$paths <- targets
   state$info <- info
   state$variants <- variants
@@ -521,7 +509,7 @@
     try(.gsim_packed_close(loaded$h2), silent = TRUE)
   }, add = TRUE)
   out <- .gsim_hapnest_founders_packed_reference_chromosome(
-    dataset$backend, loaded$h1, loaded$h2, donor_population,
+    loaded$h1, loaded$h2, donor_population,
     ancestry_weights, N, Ne, rho, genetic_position, mutation_age, n, seed,
     chromosome, donor_phase, return_genotypes, return_segments,
     individual_offset, threads)
