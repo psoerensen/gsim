@@ -22,7 +22,13 @@
   "gbits_bed_open", "gbits_bed_close", "gbits_bed_read_variant",
   "gbits_bed_sink_create", "gbits_bed_sink_append_phased",
   "gbits_bed_sink_finalize", "gbits_bed_sink_get_info",
-  "gbits_bed_sink_close"
+  "gbits_bed_sink_close",
+  "gbits_hap_sink_create", "gbits_hap_sink_append_phased",
+  "gbits_hap_sink_finalize", "gbits_hap_sink_get_info",
+  "gbits_hap_sink_close", "gbits_hap_reader_open",
+  "gbits_hap_reader_close", "gbits_hap_reader_dimensions",
+  "gbits_hap_reader_chromosome_info",
+  "gbits_hap_reader_load_chromosome"
 )
 
 .gsim_gbits_backend <- function(

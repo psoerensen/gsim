@@ -128,7 +128,7 @@ testthat::test_that("R sink preserves hand-calculated SNP-major bytes", {
   testthat::expect_identical(manifest$bytes_written, 4)
   testthat::expect_identical(manifest$expected_bytes, 4)
   testthat::expect_identical(manifest$backend,
-                             list(version = "0.19.0", abi = 4L))
+                             list(version = "0.20.0", abi = 4L))
   testthat::expect_identical(manifest$chromosome_order, "chr1")
   set.seed(911)
   expected_rng <- runif(4)

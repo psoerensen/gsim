@@ -31,6 +31,15 @@ extern SEXP C_gsim_gbits_bed_sink_append(SEXP, SEXP, SEXP);
 extern SEXP C_gsim_gbits_bed_sink_finalize(SEXP);
 extern SEXP C_gsim_gbits_bed_sink_cancel(SEXP);
 extern SEXP C_gsim_gbits_bed_sink_info(SEXP);
+extern SEXP C_gsim_gbits_hap_sink_create(SEXP, SEXP, SEXP, SEXP);
+extern SEXP C_gsim_gbits_hap_sink_append(SEXP, SEXP, SEXP);
+extern SEXP C_gsim_gbits_hap_sink_finalize(SEXP);
+extern SEXP C_gsim_gbits_hap_sink_cancel(SEXP);
+extern SEXP C_gsim_gbits_hap_sink_info(SEXP);
+extern SEXP C_gsim_gbits_hap_reader_open(SEXP, SEXP);
+extern SEXP C_gsim_gbits_hap_reader_close(SEXP);
+extern SEXP C_gsim_gbits_hap_reader_info(SEXP);
+extern SEXP C_gsim_gbits_hap_reader_load(SEXP, SEXP);
 extern SEXP C_gsim_gbits_bed_read_all(SEXP, SEXP, SEXP, SEXP);
 extern SEXP C_gsim_gmat_backend(SEXP);
 extern SEXP C_gsim_gmat_variant_create(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP,
@@ -38,6 +47,8 @@ extern SEXP C_gsim_gmat_variant_create(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP,
 extern SEXP C_gsim_gmat_sample_create(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
 extern SEXP C_gsim_gmat_write_bim(SEXP, SEXP);
 extern SEXP C_gsim_gmat_write_fam(SEXP, SEXP);
+extern SEXP C_gsim_gmat_read_bim(SEXP, SEXP);
+extern SEXP C_gsim_gmat_read_fam(SEXP, SEXP);
 
 static const R_CallMethodDef call_methods[] = {
     {"C_gsim_hapnest_founders", (DL_FUNC) &C_gsim_hapnest_founders, 17},
@@ -63,12 +74,23 @@ static const R_CallMethodDef call_methods[] = {
     {"C_gsim_gbits_bed_sink_finalize", (DL_FUNC) &C_gsim_gbits_bed_sink_finalize, 1},
     {"C_gsim_gbits_bed_sink_cancel", (DL_FUNC) &C_gsim_gbits_bed_sink_cancel, 1},
     {"C_gsim_gbits_bed_sink_info", (DL_FUNC) &C_gsim_gbits_bed_sink_info, 1},
+    {"C_gsim_gbits_hap_sink_create", (DL_FUNC) &C_gsim_gbits_hap_sink_create, 4},
+    {"C_gsim_gbits_hap_sink_append", (DL_FUNC) &C_gsim_gbits_hap_sink_append, 3},
+    {"C_gsim_gbits_hap_sink_finalize", (DL_FUNC) &C_gsim_gbits_hap_sink_finalize, 1},
+    {"C_gsim_gbits_hap_sink_cancel", (DL_FUNC) &C_gsim_gbits_hap_sink_cancel, 1},
+    {"C_gsim_gbits_hap_sink_info", (DL_FUNC) &C_gsim_gbits_hap_sink_info, 1},
+    {"C_gsim_gbits_hap_reader_open", (DL_FUNC) &C_gsim_gbits_hap_reader_open, 2},
+    {"C_gsim_gbits_hap_reader_close", (DL_FUNC) &C_gsim_gbits_hap_reader_close, 1},
+    {"C_gsim_gbits_hap_reader_info", (DL_FUNC) &C_gsim_gbits_hap_reader_info, 1},
+    {"C_gsim_gbits_hap_reader_load", (DL_FUNC) &C_gsim_gbits_hap_reader_load, 2},
     {"C_gsim_gbits_bed_read_all", (DL_FUNC) &C_gsim_gbits_bed_read_all, 4},
     {"C_gsim_gmat_backend", (DL_FUNC) &C_gsim_gmat_backend, 1},
     {"C_gsim_gmat_variant_create", (DL_FUNC) &C_gsim_gmat_variant_create, 7},
     {"C_gsim_gmat_sample_create", (DL_FUNC) &C_gsim_gmat_sample_create, 6},
     {"C_gsim_gmat_write_bim", (DL_FUNC) &C_gsim_gmat_write_bim, 2},
     {"C_gsim_gmat_write_fam", (DL_FUNC) &C_gsim_gmat_write_fam, 2},
+    {"C_gsim_gmat_read_bim", (DL_FUNC) &C_gsim_gmat_read_bim, 2},
+    {"C_gsim_gmat_read_fam", (DL_FUNC) &C_gsim_gmat_read_fam, 2},
     {NULL, NULL, 0}
 };
 

@@ -28,12 +28,22 @@ struct Backend {
                                const char* const*, const char* const*,
                                std::uint64_t, handle_t**);
     status_t (*variant_close)(handle_t*);
+    status_t (*variant_read)(const char*, handle_t**);
+    status_t (*variant_count)(const handle_t*, std::uint64_t*);
+    status_t (*variant_get)(const handle_t*, std::uint64_t, const char**,
+                            const char**, double*, std::uint64_t*,
+                            const char**, const char**);
     status_t (*variant_write)(const handle_t*, const char*, std::uint32_t,
                               WriteInfo*);
     status_t (*sample_create)(const char* const*, const char* const*,
                               const char* const*, const char* const*,
                               const std::uint32_t*, std::uint64_t, handle_t**);
     status_t (*sample_close)(handle_t*);
+    status_t (*sample_read)(const char*, handle_t**);
+    status_t (*sample_count)(const handle_t*, std::uint64_t*);
+    status_t (*sample_get)(const handle_t*, std::uint64_t, const char**,
+                           const char**, const char**, const char**,
+                           std::uint32_t*);
     status_t (*sample_write)(const handle_t*, const char*, std::uint32_t,
                              WriteInfo*);
     std::string version;
@@ -154,6 +164,16 @@ SEXP make_info(const WriteInfo& info) {
     return out;
 }
 
+void set_names(SEXP value, const std::vector<const char*>& labels) {
+    SEXP names = PROTECT(Rf_allocVector(STRSXP,
+        static_cast<R_xlen_t>(labels.size())));
+    for (R_xlen_t i = 0; i < static_cast<R_xlen_t>(labels.size()); ++i) {
+        SET_STRING_ELT(names, i, Rf_mkChar(labels[static_cast<std::size_t>(i)]));
+    }
+    Rf_setAttrib(value, R_NamesSymbol, names);
+    UNPROTECT(1);
+}
+
 }  // namespace
 
 extern "C" SEXP C_gsim_gmat_backend(SEXP symbols) {
@@ -168,9 +188,15 @@ extern "C" SEXP C_gsim_gmat_backend(SEXP symbols) {
             backend->last_error = symbol<decltype(backend->last_error)>(symbols, "gmat_last_error");
             backend->variant_create = symbol<decltype(backend->variant_create)>(symbols, "gmat_variant_metadata_create");
             backend->variant_close = symbol<decltype(backend->variant_close)>(symbols, "gmat_variant_metadata_close");
+            backend->variant_read = symbol<decltype(backend->variant_read)>(symbols, "gmat_variant_metadata_read_bim");
+            backend->variant_count = symbol<decltype(backend->variant_count)>(symbols, "gmat_variant_metadata_count");
+            backend->variant_get = symbol<decltype(backend->variant_get)>(symbols, "gmat_variant_metadata_get");
             backend->variant_write = symbol<decltype(backend->variant_write)>(symbols, "gmat_variant_metadata_write_bim");
             backend->sample_create = symbol<decltype(backend->sample_create)>(symbols, "gmat_sample_metadata_create");
             backend->sample_close = symbol<decltype(backend->sample_close)>(symbols, "gmat_sample_metadata_close");
+            backend->sample_read = symbol<decltype(backend->sample_read)>(symbols, "gmat_sample_metadata_read_fam");
+            backend->sample_count = symbol<decltype(backend->sample_count)>(symbols, "gmat_sample_metadata_count");
+            backend->sample_get = symbol<decltype(backend->sample_get)>(symbols, "gmat_sample_metadata_get");
             backend->sample_write = symbol<decltype(backend->sample_write)>(symbols, "gmat_sample_metadata_write_fam");
             if (backend->abi_version() != 0u) fail("gmat ABI mismatch: gsim requires experimental ABI 0");
             const char* version = backend->library_version();
@@ -309,6 +335,116 @@ extern "C" SEXP C_gsim_gmat_write_fam(SEXP pointer, SEXP path) {
         return make_info(info);
     } catch (const std::exception& ex) {
         Rf_error("gmat FAM write: %s", ex.what());
+    }
+    return R_NilValue;
+}
+
+extern "C" SEXP C_gsim_gmat_read_bim(SEXP backend_pointer, SEXP path) {
+    try {
+        Backend* backend = require_backend(backend_pointer);
+        const std::string source = scalar_utf8(path, "BIM path");
+        handle_t* handle = nullptr;
+        check(backend, backend->variant_read(source.c_str(), &handle),
+              "gmat BIM read");
+        Metadata* metadata = nullptr;
+        try { metadata = new Metadata{backend, handle, MetadataKind::variant}; }
+        catch (...) { (void)backend->variant_close(handle); throw; }
+        SEXP pointer = PROTECT(R_MakeExternalPtr(metadata, R_NilValue,
+                                                 backend_pointer));
+        R_RegisterCFinalizerEx(pointer, metadata_finalizer, TRUE);
+        std::uint64_t count = 0u;
+        check(backend, backend->variant_count(handle, &count),
+              "gmat BIM record count");
+        if (count > static_cast<std::uint64_t>(R_XLEN_T_MAX)) {
+            fail("BIM record count exceeds R vector limits");
+        }
+        const R_xlen_t length = static_cast<R_xlen_t>(count);
+        SEXP chromosome = PROTECT(Rf_allocVector(STRSXP, length));
+        SEXP ids = PROTECT(Rf_allocVector(STRSXP, length));
+        SEXP cm = PROTECT(Rf_allocVector(REALSXP, length));
+        SEXP bp = PROTECT(Rf_allocVector(REALSXP, length));
+        SEXP alt = PROTECT(Rf_allocVector(STRSXP, length));
+        SEXP ref = PROTECT(Rf_allocVector(STRSXP, length));
+        for (std::uint64_t i = 0u; i < count; ++i) {
+            const char *chr = nullptr, *id = nullptr, *a1 = nullptr, *a2 = nullptr;
+            double genetic = 0.0;
+            std::uint64_t physical = 0u;
+            check(backend, backend->variant_get(handle, i, &chr, &id, &genetic,
+                                                 &physical, &a1, &a2),
+                  "gmat BIM record");
+            if (physical > 9007199254740991ULL) {
+                fail("BIM base-pair position exceeds exact R integer range");
+            }
+            SET_STRING_ELT(chromosome, static_cast<R_xlen_t>(i), Rf_mkCharCE(chr, CE_UTF8));
+            SET_STRING_ELT(ids, static_cast<R_xlen_t>(i), Rf_mkCharCE(id, CE_UTF8));
+            REAL(cm)[static_cast<R_xlen_t>(i)] = genetic;
+            REAL(bp)[static_cast<R_xlen_t>(i)] = static_cast<double>(physical);
+            SET_STRING_ELT(alt, static_cast<R_xlen_t>(i), Rf_mkCharCE(a1, CE_UTF8));
+            SET_STRING_ELT(ref, static_cast<R_xlen_t>(i), Rf_mkCharCE(a2, CE_UTF8));
+        }
+        SEXP result = PROTECT(Rf_allocVector(VECSXP, 7));
+        SET_VECTOR_ELT(result, 0, pointer); SET_VECTOR_ELT(result, 1, chromosome);
+        SET_VECTOR_ELT(result, 2, ids); SET_VECTOR_ELT(result, 3, cm);
+        SET_VECTOR_ELT(result, 4, bp); SET_VECTOR_ELT(result, 5, alt);
+        SET_VECTOR_ELT(result, 6, ref);
+        set_names(result, {"pointer", "chromosome", "variant_id",
+                           "genetic_position_cm", "base_pair_position",
+                           "alt", "ref"});
+        UNPROTECT(8);
+        return result;
+    } catch (const std::exception& ex) {
+        Rf_error("gmat BIM read: %s", ex.what());
+    }
+    return R_NilValue;
+}
+
+extern "C" SEXP C_gsim_gmat_read_fam(SEXP backend_pointer, SEXP path) {
+    try {
+        Backend* backend = require_backend(backend_pointer);
+        const std::string source = scalar_utf8(path, "FAM path");
+        handle_t* handle = nullptr;
+        check(backend, backend->sample_read(source.c_str(), &handle),
+              "gmat FAM read");
+        Metadata* metadata = nullptr;
+        try { metadata = new Metadata{backend, handle, MetadataKind::sample}; }
+        catch (...) { (void)backend->sample_close(handle); throw; }
+        SEXP pointer = PROTECT(R_MakeExternalPtr(metadata, R_NilValue,
+                                                 backend_pointer));
+        R_RegisterCFinalizerEx(pointer, metadata_finalizer, TRUE);
+        std::uint64_t count = 0u;
+        check(backend, backend->sample_count(handle, &count),
+              "gmat FAM record count");
+        if (count > static_cast<std::uint64_t>(R_XLEN_T_MAX)) {
+            fail("FAM record count exceeds R vector limits");
+        }
+        const R_xlen_t length = static_cast<R_xlen_t>(count);
+        SEXP family = PROTECT(Rf_allocVector(STRSXP, length));
+        SEXP ids = PROTECT(Rf_allocVector(STRSXP, length));
+        SEXP paternal = PROTECT(Rf_allocVector(STRSXP, length));
+        SEXP maternal = PROTECT(Rf_allocVector(STRSXP, length));
+        SEXP sex = PROTECT(Rf_allocVector(INTSXP, length));
+        for (std::uint64_t i = 0u; i < count; ++i) {
+            const char *fid = nullptr, *id = nullptr, *sire = nullptr, *dam = nullptr;
+            std::uint32_t sex_value = 0u;
+            check(backend, backend->sample_get(handle, i, &fid, &id, &sire,
+                                                &dam, &sex_value),
+                  "gmat FAM record");
+            SET_STRING_ELT(family, static_cast<R_xlen_t>(i), Rf_mkCharCE(fid, CE_UTF8));
+            SET_STRING_ELT(ids, static_cast<R_xlen_t>(i), Rf_mkCharCE(id, CE_UTF8));
+            SET_STRING_ELT(paternal, static_cast<R_xlen_t>(i), Rf_mkCharCE(sire, CE_UTF8));
+            SET_STRING_ELT(maternal, static_cast<R_xlen_t>(i), Rf_mkCharCE(dam, CE_UTF8));
+            INTEGER(sex)[static_cast<R_xlen_t>(i)] = static_cast<int>(sex_value);
+        }
+        SEXP result = PROTECT(Rf_allocVector(VECSXP, 6));
+        SET_VECTOR_ELT(result, 0, pointer); SET_VECTOR_ELT(result, 1, family);
+        SET_VECTOR_ELT(result, 2, ids); SET_VECTOR_ELT(result, 3, paternal);
+        SET_VECTOR_ELT(result, 4, maternal); SET_VECTOR_ELT(result, 5, sex);
+        set_names(result, {"pointer", "family_id", "individual_id",
+                           "paternal_id", "maternal_id", "sex"});
+        UNPROTECT(7);
+        return result;
+    } catch (const std::exception& ex) {
+        Rf_error("gmat FAM read: %s", ex.what());
     }
     return R_NilValue;
 }

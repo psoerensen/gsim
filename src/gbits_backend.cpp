@@ -15,6 +15,8 @@ namespace {
 using status_t = int;
 using handle_t = void;
 struct BedSinkInfo;
+struct HapSinkInfo;
+struct HapChromosomeInfo;
 
 struct Backend {
     std::uint32_t (*abi_version)();
@@ -58,6 +60,20 @@ struct Backend {
     status_t (*bed_sink_finalize)(handle_t*);
     status_t (*bed_sink_info)(const handle_t*, BedSinkInfo*);
     status_t (*bed_sink_close)(handle_t*);
+    status_t (*hap_sink_create)(const char*, std::uint64_t, std::uint32_t,
+                                handle_t**);
+    status_t (*hap_sink_append)(handle_t*, const handle_t*, const handle_t*);
+    status_t (*hap_sink_finalize)(handle_t*);
+    status_t (*hap_sink_info)(const handle_t*, HapSinkInfo*);
+    status_t (*hap_sink_close)(handle_t*);
+    status_t (*hap_reader_open)(const char*, handle_t**);
+    status_t (*hap_reader_close)(handle_t*);
+    status_t (*hap_reader_dimensions)(const handle_t*, std::uint64_t*,
+                                      std::uint64_t*, std::uint64_t*);
+    status_t (*hap_reader_chromosome_info)(const handle_t*, std::uint64_t,
+                                           HapChromosomeInfo*);
+    status_t (*hap_reader_load)(const handle_t*, std::uint64_t, handle_t**,
+                                handle_t**);
     std::string version;
 };
 
@@ -80,6 +96,31 @@ struct BedSinkInfo {
 struct BedSink {
     Backend* backend;
     handle_t* handle;
+};
+
+struct HapSinkInfo {
+    std::uint64_t individual_count;
+    std::uint64_t marker_count;
+    std::uint64_t chromosome_count;
+    std::uint64_t bytes_written;
+    int state;
+};
+
+struct HapChromosomeInfo {
+    std::uint64_t global_start_marker;
+    std::uint64_t marker_count;
+    std::uint64_t h1_offset;
+    std::uint64_t h2_offset;
+    std::uint64_t bytes_per_phase;
+};
+
+struct HapSink { Backend* backend; handle_t* handle; };
+struct HapReader {
+    Backend* backend;
+    handle_t* handle;
+    std::uint64_t individuals;
+    std::uint64_t markers;
+    std::uint64_t chromosomes;
 };
 
 [[noreturn]] void fail(const std::string& message) {
@@ -137,6 +178,24 @@ void bed_sink_finalizer(SEXP pointer) {
     R_ClearExternalPtr(pointer);
 }
 
+void hap_sink_finalizer(SEXP pointer) {
+    HapSink* sink = static_cast<HapSink*>(R_ExternalPtrAddr(pointer));
+    if (sink != nullptr) {
+        if (sink->handle != nullptr) (void)sink->backend->hap_sink_close(sink->handle);
+        delete sink;
+    }
+    R_ClearExternalPtr(pointer);
+}
+
+void hap_reader_finalizer(SEXP pointer) {
+    HapReader* reader = static_cast<HapReader*>(R_ExternalPtrAddr(pointer));
+    if (reader != nullptr) {
+        if (reader->handle != nullptr) (void)reader->backend->hap_reader_close(reader->handle);
+        delete reader;
+    }
+    R_ClearExternalPtr(pointer);
+}
+
 Backend* require_backend(SEXP pointer) {
     if (TYPEOF(pointer) != EXTPTRSXP) fail("gbits backend is invalid");
     Backend* backend = static_cast<Backend*>(R_ExternalPtrAddr(pointer));
@@ -160,6 +219,20 @@ BedSink* require_bed_sink(SEXP pointer) {
         fail("BED sink has been released");
     }
     return sink;
+}
+
+HapSink* require_hap_sink(SEXP pointer) {
+    if (TYPEOF(pointer) != EXTPTRSXP) fail("HAP sink is invalid");
+    HapSink* sink = static_cast<HapSink*>(R_ExternalPtrAddr(pointer));
+    if (sink == nullptr || sink->handle == nullptr) fail("HAP sink has been released");
+    return sink;
+}
+
+HapReader* require_hap_reader(SEXP pointer) {
+    if (TYPEOF(pointer) != EXTPTRSXP) fail("HAP reader is invalid");
+    HapReader* reader = static_cast<HapReader*>(R_ExternalPtrAddr(pointer));
+    if (reader == nullptr || reader->handle == nullptr) fail("HAP reader has been released");
+    return reader;
 }
 
 void require_same_backend(const Packed* first, const Packed* second) {
@@ -233,6 +306,13 @@ void set_names(SEXP value, const std::vector<const char*>& names) {
     UNPROTECT(1);
 }
 
+double exact_r_number(std::uint64_t value, const char* field) {
+    if (value > 9007199254740991ULL) {
+        fail(std::string(field) + " exceeds exact R numeric representation");
+    }
+    return static_cast<double>(value);
+}
+
 } // namespace
 
 extern "C" SEXP C_gsim_gbits_backend(SEXP symbols) {
@@ -291,6 +371,26 @@ extern "C" SEXP C_gsim_gbits_backend(SEXP symbols) {
                 symbols, "gbits_bed_sink_get_info");
             backend->bed_sink_close = symbol<decltype(backend->bed_sink_close)>(
                 symbols, "gbits_bed_sink_close");
+            backend->hap_sink_create = symbol<decltype(backend->hap_sink_create)>(
+                symbols, "gbits_hap_sink_create");
+            backend->hap_sink_append = symbol<decltype(backend->hap_sink_append)>(
+                symbols, "gbits_hap_sink_append_phased");
+            backend->hap_sink_finalize = symbol<decltype(backend->hap_sink_finalize)>(
+                symbols, "gbits_hap_sink_finalize");
+            backend->hap_sink_info = symbol<decltype(backend->hap_sink_info)>(
+                symbols, "gbits_hap_sink_get_info");
+            backend->hap_sink_close = symbol<decltype(backend->hap_sink_close)>(
+                symbols, "gbits_hap_sink_close");
+            backend->hap_reader_open = symbol<decltype(backend->hap_reader_open)>(
+                symbols, "gbits_hap_reader_open");
+            backend->hap_reader_close = symbol<decltype(backend->hap_reader_close)>(
+                symbols, "gbits_hap_reader_close");
+            backend->hap_reader_dimensions = symbol<decltype(backend->hap_reader_dimensions)>(
+                symbols, "gbits_hap_reader_dimensions");
+            backend->hap_reader_chromosome_info = symbol<decltype(backend->hap_reader_chromosome_info)>(
+                symbols, "gbits_hap_reader_chromosome_info");
+            backend->hap_reader_load = symbol<decltype(backend->hap_reader_load)>(
+                symbols, "gbits_hap_reader_load_chromosome");
             const std::uint32_t abi = backend->abi_version();
             if (abi != 4u) {
                 fail("gbits ABI mismatch: gsim requires ABI 4");
@@ -683,6 +783,213 @@ extern "C" SEXP C_gsim_gbits_bed_sink_info(SEXP sink_pointer) {
         return values;
     } catch (const std::exception& ex) {
         Rf_error("gbits BED sink information: %s", ex.what());
+    }
+    return R_NilValue;
+}
+
+extern "C" SEXP C_gsim_gbits_hap_sink_create(
+    SEXP backend_pointer, SEXP path_sexp, SEXP individuals_sexp,
+    SEXP overwrite_sexp) {
+    try {
+        Backend* backend = require_backend(backend_pointer);
+        const std::string path = scalar_utf8(path_sexp, "HAP path");
+        const int individuals = scalar_int(individuals_sexp, "individuals", 1);
+        const bool overwrite = scalar_bool(overwrite_sexp, "overwrite");
+        handle_t* handle = nullptr;
+        check(backend, backend->hap_sink_create(
+              path.c_str(), static_cast<std::uint64_t>(individuals),
+              overwrite ? 1u : 0u, &handle), "gbits HAP sink creation");
+        HapSink* sink = nullptr;
+        try { sink = new HapSink{backend, handle}; }
+        catch (...) { (void)backend->hap_sink_close(handle); throw; }
+        SEXP pointer = PROTECT(R_MakeExternalPtr(sink, R_NilValue, backend_pointer));
+        R_RegisterCFinalizerEx(pointer, hap_sink_finalizer, TRUE);
+        UNPROTECT(1);
+        return pointer;
+    } catch (const std::exception& ex) {
+        Rf_error("gbits HAP sink creation: %s", ex.what());
+    }
+    return R_NilValue;
+}
+
+extern "C" SEXP C_gsim_gbits_hap_sink_append(
+    SEXP sink_pointer, SEXP h1_pointer, SEXP h2_pointer) {
+    try {
+        HapSink* sink = require_hap_sink(sink_pointer);
+        Packed* h1 = require_packed(h1_pointer);
+        Packed* h2 = require_packed(h2_pointer);
+        if (sink->backend != h1->backend || sink->backend != h2->backend) {
+            fail("HAP sink and phases originate from different gbits backends");
+        }
+        check(sink->backend, sink->backend->hap_sink_append(
+              sink->handle, h1->handle, h2->handle), "gbits HAP append");
+        return sink_pointer;
+    } catch (const std::exception& ex) {
+        Rf_error("gbits HAP append: %s", ex.what());
+    }
+    return R_NilValue;
+}
+
+extern "C" SEXP C_gsim_gbits_hap_sink_finalize(SEXP sink_pointer) {
+    try {
+        HapSink* sink = require_hap_sink(sink_pointer);
+        check(sink->backend, sink->backend->hap_sink_finalize(sink->handle),
+              "gbits HAP finalization");
+        return sink_pointer;
+    } catch (const std::exception& ex) {
+        Rf_error("gbits HAP finalization: %s", ex.what());
+    }
+    return R_NilValue;
+}
+
+extern "C" SEXP C_gsim_gbits_hap_sink_cancel(SEXP sink_pointer) {
+    try {
+        HapSink* sink = require_hap_sink(sink_pointer);
+        check(sink->backend, sink->backend->hap_sink_close(sink->handle),
+              "gbits HAP cancellation");
+        sink->handle = nullptr;
+        return R_NilValue;
+    } catch (const std::exception& ex) {
+        Rf_error("gbits HAP cancellation: %s", ex.what());
+    }
+    return R_NilValue;
+}
+
+extern "C" SEXP C_gsim_gbits_hap_sink_info(SEXP sink_pointer) {
+    try {
+        HapSink* sink = require_hap_sink(sink_pointer);
+        HapSinkInfo info{};
+        check(sink->backend, sink->backend->hap_sink_info(sink->handle, &info),
+              "gbits HAP sink information");
+        SEXP values = PROTECT(Rf_allocVector(REALSXP, 4));
+        REAL(values)[0] = exact_r_number(info.individual_count, "HAP individual count");
+        REAL(values)[1] = exact_r_number(info.marker_count, "HAP marker count");
+        REAL(values)[2] = exact_r_number(info.chromosome_count, "HAP chromosome count");
+        REAL(values)[3] = exact_r_number(info.bytes_written, "HAP byte count");
+        set_names(values, {"individual_count", "marker_count",
+                           "chromosome_count", "bytes_written"});
+        const char* state = info.state == 0 ? "open" :
+                            info.state == 1 ? "finalized" : "failed";
+        SEXP state_value = PROTECT(Rf_mkString(state));
+        Rf_setAttrib(values, Rf_install("state"), state_value);
+        UNPROTECT(2);
+        return values;
+    } catch (const std::exception& ex) {
+        Rf_error("gbits HAP sink information: %s", ex.what());
+    }
+    return R_NilValue;
+}
+
+extern "C" SEXP C_gsim_gbits_hap_reader_open(
+    SEXP backend_pointer, SEXP path_sexp) {
+    try {
+        Backend* backend = require_backend(backend_pointer);
+        const std::string path = scalar_utf8(path_sexp, "HAP path");
+        handle_t* handle = nullptr;
+        check(backend, backend->hap_reader_open(path.c_str(), &handle),
+              "gbits HAP reader open");
+        std::uint64_t individuals = 0u, markers = 0u, chromosomes = 0u;
+        try {
+            check(backend, backend->hap_reader_dimensions(
+                  handle, &individuals, &markers, &chromosomes),
+                  "gbits HAP reader dimensions");
+        } catch (...) { (void)backend->hap_reader_close(handle); throw; }
+        HapReader* reader = nullptr;
+        try { reader = new HapReader{backend, handle, individuals, markers, chromosomes}; }
+        catch (...) { (void)backend->hap_reader_close(handle); throw; }
+        SEXP pointer = PROTECT(R_MakeExternalPtr(reader, R_NilValue, backend_pointer));
+        R_RegisterCFinalizerEx(pointer, hap_reader_finalizer, TRUE);
+        UNPROTECT(1);
+        return pointer;
+    } catch (const std::exception& ex) {
+        Rf_error("gbits HAP reader open: %s", ex.what());
+    }
+    return R_NilValue;
+}
+
+extern "C" SEXP C_gsim_gbits_hap_reader_close(SEXP reader_pointer) {
+    try {
+        HapReader* reader = require_hap_reader(reader_pointer);
+        check(reader->backend, reader->backend->hap_reader_close(reader->handle),
+              "gbits HAP reader close");
+        reader->handle = nullptr;
+        return R_NilValue;
+    } catch (const std::exception& ex) {
+        Rf_error("gbits HAP reader close: %s", ex.what());
+    }
+    return R_NilValue;
+}
+
+extern "C" SEXP C_gsim_gbits_hap_reader_info(SEXP reader_pointer) {
+    try {
+        HapReader* reader = require_hap_reader(reader_pointer);
+        if (reader->chromosomes > static_cast<std::uint64_t>(
+                std::numeric_limits<int>::max())) fail("too many HAP chromosomes for R");
+        const int count = static_cast<int>(reader->chromosomes);
+        SEXP ranges = PROTECT(Rf_allocMatrix(REALSXP, count, 5));
+        for (int i = 0; i < count; ++i) {
+            HapChromosomeInfo info{};
+            check(reader->backend, reader->backend->hap_reader_chromosome_info(
+                  reader->handle, static_cast<std::uint64_t>(i), &info),
+                  "gbits HAP chromosome information");
+            REAL(ranges)[i] = exact_r_number(info.global_start_marker, "HAP marker start");
+            REAL(ranges)[i + count] = exact_r_number(info.marker_count, "HAP chromosome markers");
+            REAL(ranges)[i + 2 * count] = exact_r_number(info.h1_offset, "HAP H1 offset");
+            REAL(ranges)[i + 3 * count] = exact_r_number(info.h2_offset, "HAP H2 offset");
+            REAL(ranges)[i + 4 * count] = exact_r_number(info.bytes_per_phase, "HAP phase bytes");
+        }
+        SEXP dimnames = PROTECT(Rf_allocVector(VECSXP, 2));
+        SET_VECTOR_ELT(dimnames, 0, R_NilValue);
+        SEXP columns = PROTECT(Rf_allocVector(STRSXP, 5));
+        const char* labels[5] = {"global_start_marker", "marker_count",
+                                 "h1_offset", "h2_offset", "bytes_per_phase"};
+        for (int i = 0; i < 5; ++i) SET_STRING_ELT(columns, i, Rf_mkChar(labels[i]));
+        SET_VECTOR_ELT(dimnames, 1, columns);
+        Rf_setAttrib(ranges, R_DimNamesSymbol, dimnames);
+        SEXP result = PROTECT(Rf_allocVector(VECSXP, 4));
+        SET_VECTOR_ELT(result, 0, Rf_ScalarReal(exact_r_number(reader->individuals, "HAP individual count")));
+        SET_VECTOR_ELT(result, 1, Rf_ScalarReal(exact_r_number(reader->markers, "HAP marker count")));
+        SET_VECTOR_ELT(result, 2, Rf_ScalarReal(exact_r_number(reader->chromosomes, "HAP chromosome count")));
+        SET_VECTOR_ELT(result, 3, ranges);
+        set_names(result, {"individual_count", "marker_count", "chromosome_count", "ranges"});
+        UNPROTECT(4);
+        return result;
+    } catch (const std::exception& ex) {
+        Rf_error("gbits HAP reader information: %s", ex.what());
+    }
+    return R_NilValue;
+}
+
+extern "C" SEXP C_gsim_gbits_hap_reader_load(
+    SEXP reader_pointer, SEXP chromosome_sexp) {
+    try {
+        HapReader* reader = require_hap_reader(reader_pointer);
+        const int chromosome = scalar_int(chromosome_sexp, "chromosome", 1);
+        if (static_cast<std::uint64_t>(chromosome) > reader->chromosomes) {
+            fail("HAP chromosome is out of range");
+        }
+        handle_t* h1 = nullptr;
+        handle_t* h2 = nullptr;
+        check(reader->backend, reader->backend->hap_reader_load(
+              reader->handle, static_cast<std::uint64_t>(chromosome - 1), &h1, &h2),
+              "gbits HAP chromosome load");
+        HapChromosomeInfo info{};
+        check(reader->backend, reader->backend->hap_reader_chromosome_info(
+              reader->handle, static_cast<std::uint64_t>(chromosome - 1), &info),
+              "gbits HAP loaded chromosome information");
+        SEXP backend_pointer = R_ExternalPtrProtected(reader_pointer);
+        SEXP first = PROTECT(make_packed(backend_pointer, h1, reader->individuals,
+                                         info.marker_count));
+        SEXP second = PROTECT(make_packed(backend_pointer, h2, reader->individuals,
+                                          info.marker_count));
+        SEXP result = PROTECT(Rf_allocVector(VECSXP, 2));
+        SET_VECTOR_ELT(result, 0, first);
+        SET_VECTOR_ELT(result, 1, second);
+        set_names(result, {"h1", "h2"});
+        UNPROTECT(3);
+        return result;
+    } catch (const std::exception& ex) {
+        Rf_error("gbits HAP chromosome load: %s", ex.what());
     }
     return R_NilValue;
 }

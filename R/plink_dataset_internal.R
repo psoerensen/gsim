@@ -4,8 +4,11 @@
 .gsim_gmat_symbols <- c(
   "gmat_abi_version", "gmat_library_version", "gmat_last_error",
   "gmat_variant_metadata_create", "gmat_variant_metadata_close",
-  "gmat_variant_metadata_write_bim", "gmat_sample_metadata_create",
-  "gmat_sample_metadata_close", "gmat_sample_metadata_write_fam"
+  "gmat_variant_metadata_write_bim", "gmat_variant_metadata_read_bim",
+  "gmat_variant_metadata_count", "gmat_variant_metadata_get",
+  "gmat_sample_metadata_create", "gmat_sample_metadata_close",
+  "gmat_sample_metadata_write_fam", "gmat_sample_metadata_read_fam",
+  "gmat_sample_metadata_count", "gmat_sample_metadata_get"
 )
 
 .gsim_gmat_backend <- function(
@@ -209,18 +212,18 @@
                   c("bed", "bim", "fam"))
 }
 
-.gsim_plink_publish <- function(staged, targets, overwrite,
-                                .test_fail_after = 0L) {
+.gsim_dataset_publish <- function(staged, targets, overwrite,
+                                  .test_fail_after = 0L) {
   exists <- file.exists(targets)
   if (!overwrite && any(exists)) {
-    .gsim_stop("PLINK destination exists and overwrite is disabled: ",
+    .gsim_stop("Dataset destination exists and overwrite is disabled: ",
                paste(targets[exists], collapse = ", "))
   }
   if (overwrite && any(exists) && !all(exists)) {
-    .gsim_stop("Overwrite requires an existing complete BED/BIM/FAM triplet.")
+    .gsim_stop("Overwrite requires an existing complete three-file dataset.")
   }
   if (!all(file.exists(staged))) {
-    .gsim_stop("Cannot publish an incomplete staged BED/BIM/FAM triplet.")
+    .gsim_stop("Cannot publish an incomplete staged three-file dataset.")
   }
   fail_after <- .gsim_hapnest_integer_scalar(
     .test_fail_after, ".test_fail_after", 0
@@ -269,7 +272,7 @@
       message <- paste0(message, "; rollback failed to: ",
                         paste(rollback, collapse = ", "))
     }
-    .gsim_stop("PLINK triplet publication failed: ", message)
+    .gsim_stop("Dataset triplet publication failed: ", message)
   })
   invisible(result)
 }
@@ -410,7 +413,7 @@
       unname(fam_info[["record_count"]]) != nrow(dataset$sample_metadata)) {
     .gsim_stop("Staged PLINK triplet failed final count or byte validation.")
   }
-  .gsim_plink_publish(
+  .gsim_dataset_publish(
     dataset$staged, dataset$targets, dataset$overwrite,
     .test_fail_after = .test_fail_publish_after
   )
