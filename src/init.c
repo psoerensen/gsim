@@ -6,6 +6,8 @@
 extern SEXP C_gsim_hapnest_founders(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP,
                                      SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP,
                                      SEXP, SEXP, SEXP);
+extern SEXP C_gsim_hapnest_plan(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP,
+                                SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
 extern SEXP C_gsim_hapnest_chromosome_keys(SEXP);
 extern SEXP C_gsim_hapnest_segment_endpoint(SEXP, SEXP, SEXP, SEXP);
 extern SEXP C_gsim_hapnest_copy_segment(SEXP, SEXP, SEXP, SEXP, SEXP);
@@ -19,10 +21,13 @@ extern SEXP C_gsim_gbits_pack(SEXP, SEXP);
 extern SEXP C_gsim_gbits_zero(SEXP, SEXP, SEXP);
 extern SEXP C_gsim_gbits_unpack(SEXP);
 extern SEXP C_gsim_gbits_info(SEXP);
+extern SEXP C_gsim_gbits_close(SEXP);
 extern SEXP C_gsim_gbits_word(SEXP, SEXP, SEXP);
 extern SEXP C_gsim_gbits_copy_interval(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
 extern SEXP C_gsim_gbits_copy_filtered(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP,
                                        SEXP, SEXP);
+extern SEXP C_gsim_gbits_copy_filtered_counts(SEXP, SEXP, SEXP, SEXP, SEXP,
+                                              SEXP, SEXP, SEXP);
 extern SEXP C_gsim_gbits_make_gamete(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP,
                                      SEXP);
 extern SEXP C_gsim_gbits_decode_genotypes(SEXP, SEXP);
@@ -52,6 +57,7 @@ extern SEXP C_gsim_gmat_read_fam(SEXP, SEXP);
 
 static const R_CallMethodDef call_methods[] = {
     {"C_gsim_hapnest_founders", (DL_FUNC) &C_gsim_hapnest_founders, 17},
+    {"C_gsim_hapnest_plan", (DL_FUNC) &C_gsim_hapnest_plan, 13},
     {"C_gsim_hapnest_chromosome_keys", (DL_FUNC) &C_gsim_hapnest_chromosome_keys, 1},
     {"C_gsim_hapnest_segment_endpoint", (DL_FUNC) &C_gsim_hapnest_segment_endpoint, 4},
     {"C_gsim_hapnest_copy_segment", (DL_FUNC) &C_gsim_hapnest_copy_segment, 5},
@@ -64,9 +70,11 @@ static const R_CallMethodDef call_methods[] = {
     {"C_gsim_gbits_zero", (DL_FUNC) &C_gsim_gbits_zero, 3},
     {"C_gsim_gbits_unpack", (DL_FUNC) &C_gsim_gbits_unpack, 1},
     {"C_gsim_gbits_info", (DL_FUNC) &C_gsim_gbits_info, 1},
+    {"C_gsim_gbits_close", (DL_FUNC) &C_gsim_gbits_close, 1},
     {"C_gsim_gbits_word", (DL_FUNC) &C_gsim_gbits_word, 3},
     {"C_gsim_gbits_copy_interval", (DL_FUNC) &C_gsim_gbits_copy_interval, 6},
     {"C_gsim_gbits_copy_filtered", (DL_FUNC) &C_gsim_gbits_copy_filtered, 8},
+    {"C_gsim_gbits_copy_filtered_counts", (DL_FUNC) &C_gsim_gbits_copy_filtered_counts, 8},
     {"C_gsim_gbits_make_gamete", (DL_FUNC) &C_gsim_gbits_make_gamete, 7},
     {"C_gsim_gbits_decode_genotypes", (DL_FUNC) &C_gsim_gbits_decode_genotypes, 2},
     {"C_gsim_gbits_bed_sink_create", (DL_FUNC) &C_gsim_gbits_bed_sink_create, 5},

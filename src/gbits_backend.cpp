@@ -515,6 +515,22 @@ extern "C" SEXP C_gsim_gbits_info(SEXP pointer) {
     return R_NilValue;
 }
 
+extern "C" SEXP C_gsim_gbits_close(SEXP pointer) {
+    try {
+        Packed* packed = require_packed(pointer);
+        Backend* backend = packed->backend;
+        handle_t* handle = packed->handle;
+        packed->handle = nullptr;
+        delete packed;
+        R_ClearExternalPtr(pointer);
+        check(backend, backend->close(handle), "gbits packed haplotype close");
+        return R_NilValue;
+    } catch (const std::exception& ex) {
+        Rf_error("gbits packed haplotype close: %s", ex.what());
+    }
+    return R_NilValue;
+}
+
 extern "C" SEXP C_gsim_gbits_word(SEXP pointer, SEXP marker_sexp,
                                    SEXP word_sexp) {
     try {
@@ -599,6 +615,63 @@ extern "C" SEXP C_gsim_gbits_copy_filtered(
         return destination_pointer;
     } catch (const std::exception& ex) {
         Rf_error("gbits filtered copy: %s", ex.what());
+    }
+    return R_NilValue;
+}
+
+extern "C" SEXP C_gsim_gbits_copy_filtered_counts(
+    SEXP destination_pointer, SEXP destination_individual_sexp,
+    SEXP source_pointer, SEXP source_individual_sexp,
+    SEXP first_marker_sexp, SEXP last_marker_sexp, SEXP age_sexp,
+    SEXP mutation_age) {
+    try {
+        Packed* destination = require_packed(destination_pointer);
+        Packed* source = require_packed(source_pointer);
+        require_same_backend(destination, source);
+        if (TYPEOF(age_sexp) != REALSXP || XLENGTH(age_sexp) != 1 ||
+            !R_FINITE(REAL(age_sexp)[0]) || TYPEOF(mutation_age) != REALSXP) {
+            fail("filtered copy requires numeric age inputs");
+        }
+        const int destination_individual = scalar_int(
+            destination_individual_sexp, "destination individual");
+        const int source_individual = scalar_int(
+            source_individual_sexp, "source individual");
+        const int first_marker = scalar_int(first_marker_sexp, "first marker");
+        const int last_marker = scalar_int(last_marker_sexp, "last marker");
+        check(destination->backend,
+              destination->backend->copy_filtered(
+                  destination->handle,
+                  static_cast<std::uint64_t>(destination_individual),
+                  source->handle, static_cast<std::uint64_t>(source_individual),
+                  static_cast<std::uint64_t>(first_marker),
+                  static_cast<std::uint64_t>(last_marker), REAL(age_sexp)[0],
+                  REAL(mutation_age),
+                  static_cast<std::uint64_t>(XLENGTH(mutation_age))),
+              "gbits filtered copy");
+        int copied = 0;
+        int retained = 0;
+        for (int marker = first_marker;; ++marker) {
+            std::uint8_t allele = 0u;
+            check(source->backend,
+                  source->backend->allele(
+                      source->handle,
+                      static_cast<std::uint64_t>(source_individual),
+                      static_cast<std::uint64_t>(marker), &allele),
+                  "gbits packed allele query");
+            copied += allele == 1u ? 1 : 0;
+            retained += allele == 1u &&
+                        REAL(age_sexp)[0] < REAL(mutation_age)[marker]
+                            ? 1 : 0;
+            if (marker == last_marker) break;
+        }
+        SEXP out = PROTECT(Rf_allocVector(INTSXP, 2));
+        INTEGER(out)[0] = copied;
+        INTEGER(out)[1] = retained;
+        set_names(out, {"copied_alternative", "retained_alternative"});
+        UNPROTECT(1);
+        return out;
+    } catch (const std::exception& ex) {
+        Rf_error("gbits filtered copy with audit: %s", ex.what());
     }
     return R_NilValue;
 }

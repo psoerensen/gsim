@@ -161,6 +161,13 @@ batches only to construct and write output
 ([`genotype_algorithm.jl` lines 88-133](https://github.com/intervene-EU-H2020/synthetic_data/blob/ba52da1a63cf609306ea92540b3d130fa1efd213/algorithms/genotype/genotype_algorithm.jl#L88-L133));
 the native batch boundary is likewise not a biological event.
 
+The packed HAP-reference integration uses this identical native event loop.
+HAP/BIM/FAM chromosome order and reader batching do not enter the stream key;
+only the exact selected chromosome label does. Loaded H1/H2 donor handles are
+materialized phase-specifically through the existing gbits filtered-copy
+primitive without byte-matrix or genotype decoding. See
+`hap_reference_founders.md` for its alignment and lifetime contract.
+
 ## Validation and ownership
 
 The native interface rejects empty or dimensionally misaligned H1/H2 matrices,

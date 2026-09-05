@@ -20,6 +20,10 @@ The interface is deliberately internal and chromosome-local:
 .gsim_gbits_decode_genotypes(h1, h2) # optional validation output only
 ```
 
+HAP-loaded packed reference handles now enter the same materializer directly;
+the additive integration and explicit ownership contract are frozen in
+`hap_reference_founders.md`.
+
 The library path is explicit or comes from `GSIM_GBITS_LIBRARY`.  R loads that
 exact shared object, resolves every required phased-haplotype symbol, and the
 native adapter requires ABI 4 before constructing a handle.  Missing files,

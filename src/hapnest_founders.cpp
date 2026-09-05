@@ -214,6 +214,185 @@ SEXP make_segment_columns(const std::vector<SegmentRecord>& records) {
     return out;
 }
 
+struct FounderPlan {
+    int donor_count;
+    int marker_count;
+    int individual_count;
+    int individual_offset;
+    std::uint64_t seed;
+    std::vector<std::vector<int>> donors;
+    std::vector<double> cumulative_weights;
+    std::vector<double> population_n;
+    std::vector<double> population_ne;
+    std::vector<double> population_rho;
+    std::vector<std::size_t> block_start;
+    std::vector<std::size_t> block_end;
+    std::vector<std::uint64_t> chromosome_keys;
+    const double* positions;
+};
+
+FounderPlan prepare_founder_plan(
+    int donor_count, int marker_count, SEXP donor_codes, SEXP weights,
+    SEXP population_n, SEXP population_ne, SEXP population_rho,
+    SEXP chromosome_blocks, SEXP chromosome_labels, SEXP positions,
+    SEXP n_individuals_sexp, SEXP seed_sexp, SEXP offset_sexp) {
+    if (donor_count <= 0 || marker_count <= 0) fail("reference panel is empty");
+    if (TYPEOF(donor_codes) != INTSXP || XLENGTH(donor_codes) != donor_count ||
+        TYPEOF(weights) != REALSXP || TYPEOF(population_n) != REALSXP ||
+        TYPEOF(population_ne) != REALSXP || TYPEOF(population_rho) != REALSXP) {
+        fail("invalid population vectors");
+    }
+    const R_xlen_t population_count = XLENGTH(weights);
+    if (population_count <= 0 || XLENGTH(population_n) != population_count ||
+        XLENGTH(population_ne) != population_count ||
+        XLENGTH(population_rho) != population_count) {
+        fail("population vectors have inconsistent lengths");
+    }
+    if (TYPEOF(chromosome_blocks) != INTSXP ||
+        XLENGTH(chromosome_blocks) != marker_count || TYPEOF(positions) != REALSXP ||
+        XLENGTH(positions) != marker_count) {
+        fail("variant metadata vectors are invalid");
+    }
+
+    FounderPlan plan;
+    plan.donor_count = donor_count;
+    plan.marker_count = marker_count;
+    plan.individual_count = scalar_int(n_individuals_sexp, "n");
+    plan.individual_offset = scalar_int(offset_sexp, "individual_offset");
+    const double seed_value = scalar_real(seed_sexp, "seed");
+    if (plan.individual_count <= 0 || plan.individual_offset < 0 ||
+        seed_value < 0.0 || seed_value > 9007199254740991.0) {
+        fail("invalid n, offset, or seed");
+    }
+    plan.seed = static_cast<std::uint64_t>(seed_value);
+    plan.positions = REAL(positions);
+
+    plan.donors.resize(static_cast<std::size_t>(population_count));
+    for (int donor = 0; donor < donor_count; ++donor) {
+        const int code = INTEGER(donor_codes)[donor];
+        if (code < 0 || code > population_count) fail("invalid donor population code");
+        if (code > 0) {
+            plan.donors[static_cast<std::size_t>(code - 1)].push_back(donor);
+        }
+    }
+
+    double weight_sum = 0.0;
+    plan.cumulative_weights.resize(static_cast<std::size_t>(population_count));
+    plan.population_n.resize(static_cast<std::size_t>(population_count));
+    plan.population_ne.resize(static_cast<std::size_t>(population_count));
+    plan.population_rho.resize(static_cast<std::size_t>(population_count));
+    for (R_xlen_t pop = 0; pop < population_count; ++pop) {
+        const double w = REAL(weights)[pop];
+        const double n_ref = REAL(population_n)[pop];
+        const double ne = REAL(population_ne)[pop];
+        const double rho = REAL(population_rho)[pop];
+        if (!R_FINITE(w) || w <= 0.0 || !R_FINITE(n_ref) || n_ref <= 0.0 ||
+            !R_FINITE(ne) || ne <= 0.0 || !R_FINITE(rho) || rho <= 0.0 ||
+            plan.donors[static_cast<std::size_t>(pop)].empty()) {
+            fail("active population inputs must be finite, positive, and have donors");
+        }
+        weight_sum += w;
+        plan.cumulative_weights[static_cast<std::size_t>(pop)] = weight_sum;
+        plan.population_n[static_cast<std::size_t>(pop)] = n_ref;
+        plan.population_ne[static_cast<std::size_t>(pop)] = ne;
+        plan.population_rho[static_cast<std::size_t>(pop)] = rho;
+    }
+    if (!R_FINITE(weight_sum) || weight_sum <= 0.0) fail("invalid ancestry weights");
+
+    int previous_block = 0;
+    for (int marker = 0; marker < marker_count; ++marker) {
+        const int block = INTEGER(chromosome_blocks)[marker];
+        const double position = REAL(positions)[marker];
+        if (block <= 0 || !R_FINITE(position)) {
+            fail("invalid chromosome or genetic position");
+        }
+        if (marker == 0 || block != previous_block) {
+            if (block != previous_block + 1) fail("chromosome blocks must be consecutive");
+            if (marker > 0) {
+                plan.block_end.push_back(static_cast<std::size_t>(marker - 1));
+            }
+            plan.block_start.push_back(static_cast<std::size_t>(marker));
+            previous_block = block;
+        } else if (REAL(positions)[marker] < REAL(positions)[marker - 1]) {
+            fail("genetic positions are unsorted within a chromosome");
+        }
+    }
+    plan.block_end.push_back(static_cast<std::size_t>(marker_count - 1));
+    plan.chromosome_keys = chromosome_keys(chromosome_labels);
+    if (plan.chromosome_keys.size() != plan.block_start.size()) {
+        fail("chromosome label count must equal chromosome block count");
+    }
+    return plan;
+}
+
+struct SegmentCounts {
+    int copied;
+    int retained;
+};
+
+template <typename Consumer>
+std::vector<SegmentRecord> generate_founder_segments(
+    const FounderPlan& plan, bool retain_records, Consumer consume) {
+    std::vector<SegmentRecord> records;
+    const double weight_sum = plan.cumulative_weights.back();
+    for (int individual = 0; individual < plan.individual_count; ++individual) {
+        const std::uint64_t global_individual =
+            static_cast<std::uint64_t>(plan.individual_offset) +
+            static_cast<std::uint64_t>(individual);
+        for (int phase = 0; phase < 2; ++phase) {
+            const std::uint64_t global_haplotype = global_individual * 2u +
+                                                   static_cast<std::uint64_t>(phase);
+            for (std::size_t block = 0; block < plan.block_start.size(); ++block) {
+                SplitMix64 rng(stream_seed(plan.seed, global_haplotype,
+                                          plan.chromosome_keys[block]));
+                std::size_t position = plan.block_start[block];
+                const std::size_t last = plan.block_end[block];
+                while (position <= last) {
+                    const double population_draw = rng.open01() * weight_sum;
+                    std::size_t pop = 0;
+                    while (pop + 1u < plan.cumulative_weights.size() &&
+                           population_draw >= plan.cumulative_weights[pop]) {
+                        ++pop;
+                    }
+                    const double gamma_scale = plan.population_ne[pop] /
+                                               plan.population_n[pop];
+                    const double coalescent_age = -gamma_scale *
+                        (std::log(rng.open01()) + std::log(rng.open01()));
+                    const double exponential_scale =
+                        1.0 / (2.0 * coalescent_age * plan.population_rho[pop]);
+                    const double sampled_length =
+                        -exponential_scale * std::log(rng.open01());
+                    if (!(coalescent_age > 0.0) || !R_FINITE(coalescent_age) ||
+                        !(sampled_length >= 0.0) || ISNAN(sampled_length)) {
+                        fail("population parameters produced an invalid random draw");
+                    }
+                    const std::vector<int>& population_donors = plan.donors[pop];
+                    const int donor = population_donors[static_cast<std::size_t>(
+                        rng.bounded(static_cast<std::uint64_t>(population_donors.size())))];
+                    const std::size_t endpoint = segment_endpoint(
+                        plan.positions, position, last, sampled_length);
+                    const SegmentCounts counts = consume(
+                        individual, phase, donor, position, endpoint, coalescent_age);
+                    if (retain_records) {
+                        records.push_back(SegmentRecord{
+                            static_cast<double>(global_individual + 1u), phase + 1,
+                            static_cast<double>(global_haplotype + 1u),
+                            static_cast<int>(block + 1u),
+                            static_cast<int>(position + 1u),
+                            static_cast<int>(endpoint + 1u), donor + 1,
+                            static_cast<int>(pop + 1u), coalescent_age,
+                            sampled_length,
+                            plan.positions[endpoint] - plan.positions[position],
+                            counts.copied, counts.retained});
+                    }
+                    position = endpoint + 1u;
+                }
+            }
+        }
+    }
+    return records;
+}
+
 }  // namespace
 
 extern "C" SEXP C_gsim_hapnest_founders(
@@ -239,44 +418,28 @@ extern "C" SEXP C_gsim_hapnest_founders(
         const int marker_count = INTEGER(dims)[1];
         if (donor_count <= 0 || marker_count <= 0) fail("reference matrix is empty");
 
-        if (TYPEOF(donor_codes) != INTSXP || XLENGTH(donor_codes) != donor_count ||
-            TYPEOF(weights) != REALSXP || TYPEOF(population_n) != REALSXP ||
-            TYPEOF(population_ne) != REALSXP || TYPEOF(population_rho) != REALSXP) {
-            fail("invalid population vectors");
-        }
-        const R_xlen_t population_count = XLENGTH(weights);
-        if (population_count <= 0 || XLENGTH(population_n) != population_count ||
-            XLENGTH(population_ne) != population_count ||
-            XLENGTH(population_rho) != population_count) {
-            fail("population vectors have inconsistent lengths");
-        }
-        if (TYPEOF(chromosome_blocks) != INTSXP ||
-            XLENGTH(chromosome_blocks) != marker_count || TYPEOF(positions) != REALSXP ||
-            XLENGTH(positions) != marker_count || TYPEOF(mutation_ages) != REALSXP ||
+        if (TYPEOF(mutation_ages) != REALSXP ||
             XLENGTH(mutation_ages) != marker_count) {
-            fail("variant metadata vectors are invalid");
+            fail("mutation ages are invalid");
         }
-
-        const int n_individuals = scalar_int(n_individuals_sexp, "n");
-        const int offset = scalar_int(offset_sexp, "individual_offset");
-        const double seed_value = scalar_real(seed_sexp, "seed");
+        for (int marker = 0; marker < marker_count; ++marker) {
+            const double age = REAL(mutation_ages)[marker];
+            if (!R_FINITE(age) || age < 0.0) {
+                fail("invalid mutation age");
+            }
+        }
+        const FounderPlan plan = prepare_founder_plan(
+            donor_count, marker_count, donor_codes, weights, population_n,
+            population_ne, population_rho, chromosome_blocks,
+            chromosome_labels, positions, n_individuals_sexp, seed_sexp,
+            offset_sexp);
         const bool return_genotypes = scalar_bool(return_genotypes_sexp, "return_genotypes");
         const bool return_segments = scalar_bool(return_segments_sexp, "return_segments");
         const bool return_haplotypes = scalar_bool(return_haplotypes_sexp, "return_haplotypes");
-        if (n_individuals <= 0 || offset < 0 || seed_value < 0.0 ||
-            seed_value > 9007199254740991.0) {
-            fail("invalid n, offset, or seed");
-        }
         if (return_genotypes && !return_haplotypes) {
             fail("genotype output requires haplotype output");
         }
-        const std::uint64_t seed = static_cast<std::uint64_t>(seed_value);
-
-        std::vector<std::vector<int>> donors(static_cast<std::size_t>(population_count));
         for (int donor = 0; donor < donor_count; ++donor) {
-            const int code = INTEGER(donor_codes)[donor];
-            if (code < 0 || code > population_count) fail("invalid donor population code");
-            if (code > 0) donors[static_cast<std::size_t>(code - 1)].push_back(donor);
             for (int marker = 0; marker < marker_count; ++marker) {
                 const R_xlen_t index = donor + donor_count * marker;
                 if (RAW(reference_h1)[index] > 1u || RAW(reference_h2)[index] > 1u) {
@@ -285,134 +448,42 @@ extern "C" SEXP C_gsim_hapnest_founders(
             }
         }
 
-        double weight_sum = 0.0;
-        std::vector<double> cumulative(static_cast<std::size_t>(population_count));
-        for (R_xlen_t pop = 0; pop < population_count; ++pop) {
-            const double w = REAL(weights)[pop];
-            const double n_ref = REAL(population_n)[pop];
-            const double ne = REAL(population_ne)[pop];
-            const double rho = REAL(population_rho)[pop];
-            if (!R_FINITE(w) || w <= 0.0 || !R_FINITE(n_ref) || n_ref <= 0.0 ||
-                !R_FINITE(ne) || ne <= 0.0 || !R_FINITE(rho) || rho <= 0.0 ||
-                donors[static_cast<std::size_t>(pop)].empty()) {
-                fail("active population inputs must be finite, positive, and have donors");
-            }
-            weight_sum += w;
-            cumulative[static_cast<std::size_t>(pop)] = weight_sum;
-        }
-        if (!R_FINITE(weight_sum) || weight_sum <= 0.0) fail("invalid ancestry weights");
-
-        std::vector<std::size_t> block_start;
-        std::vector<std::size_t> block_end;
-        int previous_block = 0;
-        for (int marker = 0; marker < marker_count; ++marker) {
-            const int block = INTEGER(chromosome_blocks)[marker];
-            const double position = REAL(positions)[marker];
-            const double age = REAL(mutation_ages)[marker];
-            if (block <= 0 || !R_FINITE(position) || !R_FINITE(age) || age < 0.0) {
-                fail("invalid chromosome, position, or mutation age");
-            }
-            if (marker == 0 || block != previous_block) {
-                if (block != previous_block + 1) fail("chromosome blocks must be consecutive");
-                if (marker > 0) block_end.push_back(static_cast<std::size_t>(marker - 1));
-                block_start.push_back(static_cast<std::size_t>(marker));
-                previous_block = block;
-            } else if (REAL(positions)[marker] < REAL(positions)[marker - 1]) {
-                fail("genetic positions are unsorted within a chromosome");
-            }
-        }
-        block_end.push_back(static_cast<std::size_t>(marker_count - 1));
-        const std::vector<std::uint64_t> stable_chromosome_keys =
-            chromosome_keys(chromosome_labels);
-        if (stable_chromosome_keys.size() != block_start.size()) {
-            fail("chromosome label count must equal chromosome block count");
-        }
-
         SEXP h1 = R_NilValue;
         SEXP h2 = R_NilValue;
         if (return_haplotypes) {
-            h1 = PROTECT(Rf_allocMatrix(RAWSXP, n_individuals, marker_count));
-            h2 = PROTECT(Rf_allocMatrix(RAWSXP, n_individuals, marker_count));
+            h1 = PROTECT(Rf_allocMatrix(RAWSXP, plan.individual_count, marker_count));
+            h2 = PROTECT(Rf_allocMatrix(RAWSXP, plan.individual_count, marker_count));
         }
         SEXP genotypes = R_NilValue;
-        if (return_genotypes) genotypes = PROTECT(Rf_allocMatrix(RAWSXP, n_individuals, marker_count));
-        std::vector<SegmentRecord> records;
-
-        for (int individual = 0; individual < n_individuals; ++individual) {
-            const std::uint64_t global_individual =
-                static_cast<std::uint64_t>(offset) + static_cast<std::uint64_t>(individual);
-            for (int phase = 0; phase < 2; ++phase) {
-                Rbyte* output = return_haplotypes
-                                    ? (phase == 0 ? RAW(h1) : RAW(h2))
-                                    : nullptr;
-                const Rbyte* phase_reference =
-                    phase == 0 ? RAW(reference_h1) : RAW(reference_h2);
-                const std::uint64_t global_haplotype = global_individual * 2u +
-                                                       static_cast<std::uint64_t>(phase);
-                for (std::size_t block = 0; block < block_start.size(); ++block) {
-                    SplitMix64 rng(stream_seed(seed, global_haplotype,
-                                              stable_chromosome_keys[block]));
-                    std::size_t position = block_start[block];
-                    const std::size_t last = block_end[block];
-                    while (position <= last) {
-                        const double population_draw = rng.open01() * weight_sum;
-                        std::size_t pop = 0;
-                        while (pop + 1u < cumulative.size() &&
-                               population_draw >= cumulative[pop]) {
-                            ++pop;
-                        }
-                        const double gamma_scale = REAL(population_ne)[pop] /
-                                                   REAL(population_n)[pop];
-                        const double coalescent_age = -gamma_scale *
-                            (std::log(rng.open01()) + std::log(rng.open01()));
-                        const double exponential_scale =
-                            1.0 / (2.0 * coalescent_age * REAL(population_rho)[pop]);
-                        const double sampled_length =
-                            -exponential_scale * std::log(rng.open01());
-                        if (!(coalescent_age > 0.0) || !R_FINITE(coalescent_age) ||
-                            !(sampled_length >= 0.0) || ISNAN(sampled_length)) {
-                            fail("population parameters produced an invalid random draw");
-                        }
-                        const std::vector<int>& population_donors = donors[pop];
-                        const int donor = population_donors[static_cast<std::size_t>(
-                            rng.bounded(static_cast<std::uint64_t>(population_donors.size())))];
-                        const std::size_t endpoint = segment_endpoint(
-                            REAL(positions), position, last, sampled_length);
-
-                        int copied_alternative = 0;
-                        int retained_alternative = 0;
-                        for (std::size_t marker = position; marker <= endpoint; ++marker) {
-                            const Rbyte allele = phase_reference[
-                                donor + donor_count * static_cast<int>(marker)];
-                            copied_alternative += allele == 1u ? 1 : 0;
-                            const Rbyte retained =
-                                allele == 1u && coalescent_age < REAL(mutation_ages)[marker]
-                                    ? static_cast<Rbyte>(1u)
-                                    : static_cast<Rbyte>(0u);
-                            if (return_haplotypes) {
-                                output[individual + n_individuals *
-                                                       static_cast<int>(marker)] = retained;
-                            }
-                            retained_alternative += retained == 1u ? 1 : 0;
-                        }
-
-                        if (return_segments) {
-                            records.push_back(SegmentRecord{
-                                static_cast<double>(global_individual + 1u), phase + 1,
-                                static_cast<double>(global_haplotype + 1u),
-                                static_cast<int>(block + 1u),
-                                static_cast<int>(position + 1u),
-                                static_cast<int>(endpoint + 1u), donor + 1,
-                                static_cast<int>(pop + 1u), coalescent_age,
-                                sampled_length,
-                                REAL(positions)[endpoint] - REAL(positions)[position],
-                                copied_alternative, retained_alternative});
-                        }
-                        position = endpoint + 1u;
-                    }
-                }
-            }
+        if (return_genotypes) {
+            genotypes = PROTECT(Rf_allocMatrix(
+                RAWSXP, plan.individual_count, marker_count));
         }
+        const std::vector<SegmentRecord> records = generate_founder_segments(
+            plan, return_segments,
+            [&](int individual, int phase, int donor, std::size_t first,
+                std::size_t last, double coalescent_age) {
+                Rbyte* output = return_haplotypes
+                    ? (phase == 0 ? RAW(h1) : RAW(h2)) : nullptr;
+                const Rbyte* reference = phase == 0
+                    ? RAW(reference_h1) : RAW(reference_h2);
+                int copied = 0;
+                int retained_count = 0;
+                for (std::size_t marker = first; marker <= last; ++marker) {
+                    const Rbyte allele = reference[
+                        donor + donor_count * static_cast<int>(marker)];
+                    copied += allele == 1u ? 1 : 0;
+                    const Rbyte retained =
+                        allele == 1u && coalescent_age < REAL(mutation_ages)[marker]
+                            ? static_cast<Rbyte>(1u) : static_cast<Rbyte>(0u);
+                    if (return_haplotypes) {
+                        output[individual + plan.individual_count *
+                                              static_cast<int>(marker)] = retained;
+                    }
+                    retained_count += retained == 1u ? 1 : 0;
+                }
+                return SegmentCounts{copied, retained_count};
+            });
 
         if (return_genotypes) {
             for (R_xlen_t i = 0; i < XLENGTH(h1); ++i) {
@@ -454,6 +525,34 @@ extern "C" SEXP C_gsim_hapnest_founders(
         Rf_error("HAPNEST founder core: %s", ex.what());
     } catch (...) {
         Rf_error("HAPNEST founder core: unknown native error");
+    }
+    return R_NilValue;
+}
+
+extern "C" SEXP C_gsim_hapnest_plan(
+    SEXP donor_count_sexp, SEXP marker_count_sexp, SEXP donor_codes,
+    SEXP weights, SEXP population_n, SEXP population_ne,
+    SEXP population_rho, SEXP chromosome_blocks, SEXP chromosome_labels,
+    SEXP positions, SEXP n_individuals_sexp, SEXP seed_sexp,
+    SEXP offset_sexp) {
+    try {
+        const int donor_count = scalar_int(donor_count_sexp, "donor_count");
+        const int marker_count = scalar_int(marker_count_sexp, "marker_count");
+        const FounderPlan plan = prepare_founder_plan(
+            donor_count, marker_count, donor_codes, weights, population_n,
+            population_ne, population_rho, chromosome_blocks,
+            chromosome_labels, positions, n_individuals_sexp, seed_sexp,
+            offset_sexp);
+        const std::vector<SegmentRecord> records = generate_founder_segments(
+            plan, true,
+            [](int, int, int, std::size_t, std::size_t, double) {
+                return SegmentCounts{NA_INTEGER, NA_INTEGER};
+            });
+        return make_segment_columns(records);
+    } catch (const std::exception& ex) {
+        Rf_error("HAPNEST founder event plan: %s", ex.what());
+    } catch (...) {
+        Rf_error("HAPNEST founder event plan: unknown native error");
     }
     return R_NilValue;
 }

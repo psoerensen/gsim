@@ -370,6 +370,87 @@
   loaded
 }
 
+.gsim_hapnest_align_named_reference_vector <- function(value, ids, name,
+                                                        numeric = FALSE) {
+  if (is.null(names(value))) {
+    .gsim_stop(name, " must be named by reference sample or variant ID.")
+  }
+  keys <- enc2utf8(names(value))
+  if (length(value) != length(ids) || anyNA(keys) || any(!nzchar(keys)) ||
+      anyDuplicated(keys) || !setequal(keys, ids)) {
+    missing <- setdiff(ids, keys)
+    extra <- setdiff(keys, ids)
+    detail <- c(
+      if (length(missing)) paste0("missing: ", paste(missing, collapse = ", ")),
+      if (length(extra)) paste0("extra: ", paste(extra, collapse = ", ")))
+    .gsim_stop(name, " IDs must exactly match reference order",
+               if (length(detail)) paste0(" (", paste(detail, collapse = "; "), ")") else "",
+               ".")
+  }
+  aligned <- value[match(ids, keys)]
+  names(aligned) <- NULL
+  if (numeric) as.double(aligned) else as.character(aligned)
+}
+
+.gsim_hapnest_founders_from_hap_chromosome <- function(
+  dataset, chromosome, donor_population, ancestry_weights, N, Ne, rho,
+  genetic_position, mutation_age, n, seed, donor_phase = "hapnest",
+  return_genotypes = FALSE, return_segments = TRUE, individual_offset = 0L
+) {
+  if (!inherits(dataset, "gsim_hap_dataset_reader") || dataset$closed) {
+    .gsim_stop("dataset must be an open validated HAP/BIM/FAM reference reader.")
+  }
+  chromosome <- enc2utf8(as.character(chromosome))
+  index <- match(chromosome, dataset$chromosome)
+  if (length(chromosome) != 1L || is.na(chromosome) || !nzchar(chromosome) ||
+      is.na(index)) {
+    .gsim_stop("chromosome must exactly identify one reference chromosome.")
+  }
+  sample_ids <- enc2utf8(dataset$samples$individual_id)
+  donor_population <- .gsim_hapnest_align_named_reference_vector(
+    donor_population, sample_ids, "donor_population")
+  start <- sum(head(dataset$marker_count, index - 1L)) + 1L
+  rows <- seq.int(start, length.out = dataset$marker_count[[index]])
+  variants <- dataset$variants[rows, , drop = FALSE]
+  variant_ids <- enc2utf8(variants$variant_id)
+  genetic_position <- .gsim_hapnest_align_named_reference_vector(
+    genetic_position, variant_ids, "genetic_position", numeric = TRUE)
+  mutation_age <- .gsim_hapnest_align_named_reference_vector(
+    mutation_age, variant_ids, "mutation_age", numeric = TRUE)
+  position_text <- function(x) {
+    formatC(x, format = "f", digits = 15L, decimal.mark = ".")
+  }
+  if (!identical(position_text(genetic_position),
+                 position_text(as.double(variants$genetic_position_cm)))) {
+    .gsim_stop("genetic_position must exactly equal serialized BIM cM values in marker order.")
+  }
+  if (!identical(enc2utf8(as.character(variants$chromosome)),
+                 rep.int(chromosome, nrow(variants)))) {
+    .gsim_stop("Requested chromosome does not match its contiguous BIM block.")
+  }
+  loaded <- .gsim_hap_dataset_load_chromosome(dataset, chromosome)
+  on.exit({
+    try(.gsim_gbits_close(loaded$h1), silent = TRUE)
+    try(.gsim_gbits_close(loaded$h2), silent = TRUE)
+  }, add = TRUE)
+  out <- .gsim_hapnest_founders_packed_reference_chromosome(
+    dataset$backend, loaded$h1, loaded$h2, donor_population,
+    ancestry_weights, N, Ne, rho, genetic_position, mutation_age, n, seed,
+    chromosome, donor_phase, return_genotypes, return_segments,
+    individual_offset)
+  out$settings$reference_source <- "HAP v1 chromosome handles"
+  out$settings$reference_paths <- dataset$paths
+  out$reference_alignment <- list(
+    chromosome = chromosome, sample_ids = sample_ids,
+    variant_ids = variant_ids, global_start_marker = start,
+    marker_count = nrow(variants),
+    genetic_position_unit = "cM from BIM",
+    population_alignment = "exact named FAM individual IDs",
+    mutation_alignment = "exact named BIM variant IDs")
+  class(out) <- c("gsim_hap_reference_founders_packed", class(out))
+  out
+}
+
 .gsim_hap_dataset_close <- function(dataset) {
   if (!inherits(dataset, "gsim_hap_dataset_reader")) {
     .gsim_stop("dataset is not a phased dataset reader.")
