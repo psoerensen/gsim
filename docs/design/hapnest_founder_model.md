@@ -183,8 +183,9 @@ algorithm.  The focused interface returns R `raw` matrices (one byte per
 allele/count), not dense double matrices and not a new persistent storage
 format.  Reusable bit-packed binary/ternary representation and PLINK coding
 belong to `gbits`; panel identity, map alignment, transformations, and LD
-summaries belong to `gmat`.  No production BED/BIM/FAM writer currently exists
-in those repositories, so this milestone adds none.  Mutation-age filtering
+summaries belong to `gmat`. The internal packed PLINK dataset path now writes
+BED/BIM/FAM without changing this byte oracle or materializing dense dosage
+matrices. Mutation-age filtering
 belongs to the simulation model in `gsim`; mutation-map ingestion,
 interpolation, and variant alignment remain preprocessing concerns outside
 this milestone.

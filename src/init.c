@@ -32,6 +32,12 @@ extern SEXP C_gsim_gbits_bed_sink_finalize(SEXP);
 extern SEXP C_gsim_gbits_bed_sink_cancel(SEXP);
 extern SEXP C_gsim_gbits_bed_sink_info(SEXP);
 extern SEXP C_gsim_gbits_bed_read_all(SEXP, SEXP, SEXP, SEXP);
+extern SEXP C_gsim_gmat_backend(SEXP);
+extern SEXP C_gsim_gmat_variant_create(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP,
+                                        SEXP);
+extern SEXP C_gsim_gmat_sample_create(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
+extern SEXP C_gsim_gmat_write_bim(SEXP, SEXP);
+extern SEXP C_gsim_gmat_write_fam(SEXP, SEXP);
 
 static const R_CallMethodDef call_methods[] = {
     {"C_gsim_hapnest_founders", (DL_FUNC) &C_gsim_hapnest_founders, 17},
@@ -58,6 +64,11 @@ static const R_CallMethodDef call_methods[] = {
     {"C_gsim_gbits_bed_sink_cancel", (DL_FUNC) &C_gsim_gbits_bed_sink_cancel, 1},
     {"C_gsim_gbits_bed_sink_info", (DL_FUNC) &C_gsim_gbits_bed_sink_info, 1},
     {"C_gsim_gbits_bed_read_all", (DL_FUNC) &C_gsim_gbits_bed_read_all, 4},
+    {"C_gsim_gmat_backend", (DL_FUNC) &C_gsim_gmat_backend, 1},
+    {"C_gsim_gmat_variant_create", (DL_FUNC) &C_gsim_gmat_variant_create, 7},
+    {"C_gsim_gmat_sample_create", (DL_FUNC) &C_gsim_gmat_sample_create, 6},
+    {"C_gsim_gmat_write_bim", (DL_FUNC) &C_gsim_gmat_write_bim, 2},
+    {"C_gsim_gmat_write_fam", (DL_FUNC) &C_gsim_gmat_write_fam, 2},
     {NULL, NULL, 0}
 };
 

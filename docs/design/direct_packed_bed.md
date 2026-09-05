@@ -2,8 +2,9 @@
 
 `gsim` owns final chromosome, individual, and variant ordering, plus provenance.
 The binary encoder and transactional sink are `gbits` 0.19 C ABI 4 facilities.
-`gmat` is deliberately absent: BIM/FAM, persistent marker/sample metadata, and
-allele-orientation policy remain its next-milestone responsibility.
+This low-level BED-only adapter remains deliberately independent of `gmat`.
+The higher-level `plink_dataset_production.md` contract now composes it with
+`gmat`-owned BIM/FAM metadata without changing this sink.
 
 The unexported orchestration surface is:
 
