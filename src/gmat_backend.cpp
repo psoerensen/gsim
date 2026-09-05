@@ -46,6 +46,19 @@ struct Backend {
                            std::uint32_t*);
     status_t (*sample_write)(const handle_t*, const char*, std::uint32_t,
                              WriteInfo*);
+    status_t (*vcf_open)(const char*, handle_t**);
+    status_t (*vcf_close)(handle_t*);
+    status_t (*vcf_dimensions)(const handle_t*, std::uint64_t*, std::uint64_t*,
+                               std::uint64_t*);
+    status_t (*vcf_sample)(const handle_t*, std::uint64_t, const char**);
+    status_t (*vcf_variant)(const handle_t*, std::uint64_t, const char**,
+                            const char**, std::uint64_t*, const char**,
+                            const char**, std::uint32_t*);
+    status_t (*vcf_chromosome)(const handle_t*, std::uint64_t, const char**,
+                               std::uint64_t*, std::uint64_t*);
+    status_t (*vcf_start)(handle_t*, std::uint64_t);
+    status_t (*vcf_next)(handle_t*, std::uint8_t*, std::uint8_t*,
+                         std::uint64_t, std::uint64_t*, std::uint32_t*);
     std::string version;
 };
 
@@ -55,6 +68,12 @@ struct Metadata {
     Backend* backend;
     handle_t* handle;
     MetadataKind kind;
+};
+
+struct VcfReader {
+    Backend* backend;
+    handle_t* handle;
+    std::uint64_t samples;
 };
 
 [[noreturn]] void fail(const std::string& message) {
@@ -91,6 +110,15 @@ Metadata* require_metadata(SEXP pointer, MetadataKind kind) {
     if (value->handle == nullptr || value->kind != kind) {
         fail("gmat metadata handle is closed or has the wrong kind");
     }
+    return value;
+}
+
+VcfReader* require_vcf(SEXP pointer) {
+    if (TYPEOF(pointer) != EXTPTRSXP || R_ExternalPtrAddr(pointer) == nullptr) {
+        fail("invalid gmat VCF reader pointer");
+    }
+    VcfReader* value = static_cast<VcfReader*>(R_ExternalPtrAddr(pointer));
+    if (value->handle == nullptr) fail("gmat VCF reader is closed");
     return value;
 }
 
@@ -150,6 +178,15 @@ void metadata_finalizer(SEXP pointer) {
     R_ClearExternalPtr(pointer);
 }
 
+void vcf_finalizer(SEXP pointer) {
+    VcfReader* value = static_cast<VcfReader*>(R_ExternalPtrAddr(pointer));
+    if (value != nullptr) {
+        if (value->handle != nullptr) (void)value->backend->vcf_close(value->handle);
+        delete value;
+    }
+    R_ClearExternalPtr(pointer);
+}
+
 SEXP make_info(const WriteInfo& info) {
     SEXP out = PROTECT(Rf_allocVector(REALSXP, 3));
     REAL(out)[0] = static_cast<double>(info.record_count);
@@ -198,6 +235,14 @@ extern "C" SEXP C_gsim_gmat_backend(SEXP symbols) {
             backend->sample_count = symbol<decltype(backend->sample_count)>(symbols, "gmat_sample_metadata_count");
             backend->sample_get = symbol<decltype(backend->sample_get)>(symbols, "gmat_sample_metadata_get");
             backend->sample_write = symbol<decltype(backend->sample_write)>(symbols, "gmat_sample_metadata_write_fam");
+            backend->vcf_open = symbol<decltype(backend->vcf_open)>(symbols, "gmat_phased_vcf_reader_open");
+            backend->vcf_close = symbol<decltype(backend->vcf_close)>(symbols, "gmat_phased_vcf_reader_close");
+            backend->vcf_dimensions = symbol<decltype(backend->vcf_dimensions)>(symbols, "gmat_phased_vcf_reader_dimensions");
+            backend->vcf_sample = symbol<decltype(backend->vcf_sample)>(symbols, "gmat_phased_vcf_reader_sample");
+            backend->vcf_variant = symbol<decltype(backend->vcf_variant)>(symbols, "gmat_phased_vcf_reader_variant");
+            backend->vcf_chromosome = symbol<decltype(backend->vcf_chromosome)>(symbols, "gmat_phased_vcf_reader_chromosome");
+            backend->vcf_start = symbol<decltype(backend->vcf_start)>(symbols, "gmat_phased_vcf_reader_start_chromosome");
+            backend->vcf_next = symbol<decltype(backend->vcf_next)>(symbols, "gmat_phased_vcf_reader_next");
             if (backend->abi_version() != 0u) fail("gmat ABI mismatch: gsim requires experimental ABI 0");
             const char* version = backend->library_version();
             if (version == nullptr || version[0] == '\0') fail("gmat returned an empty library version");
@@ -445,6 +490,151 @@ extern "C" SEXP C_gsim_gmat_read_fam(SEXP backend_pointer, SEXP path) {
         return result;
     } catch (const std::exception& ex) {
         Rf_error("gmat FAM read: %s", ex.what());
+    }
+    return R_NilValue;
+}
+
+extern "C" SEXP C_gsim_gmat_vcf_open(SEXP backend_pointer, SEXP path) {
+    try {
+        Backend* backend = require_backend(backend_pointer);
+        const std::string source = scalar_utf8(path, "VCF path");
+        handle_t* handle = nullptr;
+        check(backend, backend->vcf_open(source.c_str(), &handle), "gmat VCF open");
+        std::uint64_t sample_count = 0, variant_count = 0, chromosome_count = 0;
+        check(backend, backend->vcf_dimensions(handle, &sample_count, &variant_count,
+                                               &chromosome_count),
+              "gmat VCF dimensions");
+        if (sample_count > static_cast<std::uint64_t>(R_XLEN_T_MAX) ||
+            variant_count > static_cast<std::uint64_t>(R_XLEN_T_MAX) ||
+            chromosome_count > static_cast<std::uint64_t>(R_XLEN_T_MAX)) {
+            (void)backend->vcf_close(handle);
+            fail("VCF dimensions exceed R vector limits");
+        }
+        VcfReader* reader = nullptr;
+        try { reader = new VcfReader{backend, handle, sample_count}; }
+        catch (...) { (void)backend->vcf_close(handle); throw; }
+        SEXP pointer = PROTECT(R_MakeExternalPtr(reader, R_NilValue, backend_pointer));
+        R_RegisterCFinalizerEx(pointer, vcf_finalizer, TRUE);
+        SEXP samples = PROTECT(Rf_allocVector(STRSXP, static_cast<R_xlen_t>(sample_count)));
+        for (std::uint64_t i = 0; i < sample_count; ++i) {
+            const char* value = nullptr;
+            check(backend, backend->vcf_sample(handle, i, &value), "gmat VCF sample");
+            SET_STRING_ELT(samples, static_cast<R_xlen_t>(i), Rf_mkCharCE(value, CE_UTF8));
+        }
+        SEXP chromosome = PROTECT(Rf_allocVector(STRSXP, static_cast<R_xlen_t>(variant_count)));
+        SEXP ids = PROTECT(Rf_allocVector(STRSXP, static_cast<R_xlen_t>(variant_count)));
+        SEXP bp = PROTECT(Rf_allocVector(REALSXP, static_cast<R_xlen_t>(variant_count)));
+        SEXP ref = PROTECT(Rf_allocVector(STRSXP, static_cast<R_xlen_t>(variant_count)));
+        SEXP alt = PROTECT(Rf_allocVector(STRSXP, static_cast<R_xlen_t>(variant_count)));
+        SEXP generated = PROTECT(Rf_allocVector(LGLSXP, static_cast<R_xlen_t>(variant_count)));
+        for (std::uint64_t i = 0; i < variant_count; ++i) {
+            const char *chr = nullptr, *id = nullptr, *reference = nullptr, *alternate = nullptr;
+            std::uint64_t physical = 0;
+            std::uint32_t made = 0;
+            check(backend, backend->vcf_variant(handle, i, &chr, &id, &physical,
+                                                 &reference, &alternate, &made),
+                  "gmat VCF variant");
+            if (physical > 9007199254740991ULL) fail("VCF POS exceeds exact R numeric range");
+            SET_STRING_ELT(chromosome, static_cast<R_xlen_t>(i), Rf_mkCharCE(chr, CE_UTF8));
+            SET_STRING_ELT(ids, static_cast<R_xlen_t>(i), Rf_mkCharCE(id, CE_UTF8));
+            REAL(bp)[static_cast<R_xlen_t>(i)] = static_cast<double>(physical);
+            SET_STRING_ELT(ref, static_cast<R_xlen_t>(i), Rf_mkCharCE(reference, CE_UTF8));
+            SET_STRING_ELT(alt, static_cast<R_xlen_t>(i), Rf_mkCharCE(alternate, CE_UTF8));
+            LOGICAL(generated)[static_cast<R_xlen_t>(i)] = made ? TRUE : FALSE;
+        }
+        SEXP block_label = PROTECT(Rf_allocVector(STRSXP, static_cast<R_xlen_t>(chromosome_count)));
+        SEXP block_first = PROTECT(Rf_allocVector(REALSXP, static_cast<R_xlen_t>(chromosome_count)));
+        SEXP block_count = PROTECT(Rf_allocVector(REALSXP, static_cast<R_xlen_t>(chromosome_count)));
+        for (std::uint64_t i = 0; i < chromosome_count; ++i) {
+            const char* label = nullptr;
+            std::uint64_t first = 0, count = 0;
+            check(backend, backend->vcf_chromosome(handle, i, &label, &first, &count),
+                  "gmat VCF chromosome");
+            SET_STRING_ELT(block_label, static_cast<R_xlen_t>(i), Rf_mkCharCE(label, CE_UTF8));
+            REAL(block_first)[static_cast<R_xlen_t>(i)] = static_cast<double>(first + 1u);
+            REAL(block_count)[static_cast<R_xlen_t>(i)] = static_cast<double>(count);
+        }
+        SEXP variants = PROTECT(Rf_allocVector(VECSXP, 6));
+        SET_VECTOR_ELT(variants, 0, chromosome); SET_VECTOR_ELT(variants, 1, ids);
+        SET_VECTOR_ELT(variants, 2, bp); SET_VECTOR_ELT(variants, 3, ref);
+        SET_VECTOR_ELT(variants, 4, alt); SET_VECTOR_ELT(variants, 5, generated);
+        set_names(variants, {"chromosome", "variant_id", "base_pair_position",
+                             "ref", "alt", "generated_id"});
+        SEXP blocks = PROTECT(Rf_allocVector(VECSXP, 3));
+        SET_VECTOR_ELT(blocks, 0, block_label); SET_VECTOR_ELT(blocks, 1, block_first);
+        SET_VECTOR_ELT(blocks, 2, block_count);
+        set_names(blocks, {"chromosome", "first_variant", "variant_count"});
+        SEXP result = PROTECT(Rf_allocVector(VECSXP, 4));
+        SET_VECTOR_ELT(result, 0, pointer); SET_VECTOR_ELT(result, 1, samples);
+        SET_VECTOR_ELT(result, 2, variants); SET_VECTOR_ELT(result, 3, blocks);
+        set_names(result, {"pointer", "samples", "variants", "chromosomes"});
+        UNPROTECT(14);
+        return result;
+    } catch (const std::exception& ex) {
+        Rf_error("gmat VCF open: %s", ex.what());
+    }
+    return R_NilValue;
+}
+
+extern "C" SEXP C_gsim_gmat_vcf_start(SEXP pointer, SEXP chromosome_index) {
+    try {
+        VcfReader* reader = require_vcf(pointer);
+        if (TYPEOF(chromosome_index) != INTSXP || XLENGTH(chromosome_index) != 1 ||
+            INTEGER(chromosome_index)[0] == NA_INTEGER || INTEGER(chromosome_index)[0] < 1) {
+            fail("chromosome index must be a positive integer");
+        }
+        check(reader->backend,
+              reader->backend->vcf_start(reader->handle,
+                  static_cast<std::uint64_t>(INTEGER(chromosome_index)[0] - 1)),
+              "gmat VCF chromosome start");
+        return R_NilValue;
+    } catch (const std::exception& ex) {
+        Rf_error("gmat VCF start: %s", ex.what());
+    }
+    return R_NilValue;
+}
+
+extern "C" SEXP C_gsim_gmat_vcf_next(SEXP pointer) {
+    try {
+        VcfReader* reader = require_vcf(pointer);
+        if (reader->samples > static_cast<std::uint64_t>(R_XLEN_T_MAX)) {
+            fail("VCF sample count exceeds R vector limits");
+        }
+        const R_xlen_t count = static_cast<R_xlen_t>(reader->samples);
+        SEXP h1 = PROTECT(Rf_allocVector(RAWSXP, count));
+        SEXP h2 = PROTECT(Rf_allocVector(RAWSXP, count));
+        std::uint64_t variant = 0;
+        std::uint32_t has_record = 0;
+        check(reader->backend,
+              reader->backend->vcf_next(reader->handle, RAW(h1), RAW(h2),
+                                         reader->samples, &variant, &has_record),
+              "gmat VCF record");
+        if (!has_record) {
+            UNPROTECT(2);
+            return R_NilValue;
+        }
+        if (variant >= 9007199254740991ULL) fail("VCF variant index exceeds exact R numeric range");
+        SEXP result = PROTECT(Rf_allocVector(VECSXP, 3));
+        SET_VECTOR_ELT(result, 0, Rf_ScalarReal(static_cast<double>(variant + 1u)));
+        SET_VECTOR_ELT(result, 1, h1); SET_VECTOR_ELT(result, 2, h2);
+        set_names(result, {"variant_index", "h1", "h2"});
+        UNPROTECT(3);
+        return result;
+    } catch (const std::exception& ex) {
+        Rf_error("gmat VCF next: %s", ex.what());
+    }
+    return R_NilValue;
+}
+
+extern "C" SEXP C_gsim_gmat_vcf_close(SEXP pointer) {
+    try {
+        VcfReader* reader = require_vcf(pointer);
+        check(reader->backend, reader->backend->vcf_close(reader->handle),
+              "gmat VCF close");
+        reader->handle = nullptr;
+        return R_NilValue;
+    } catch (const std::exception& ex) {
+        Rf_error("gmat VCF close: %s", ex.what());
     }
     return R_NilValue;
 }

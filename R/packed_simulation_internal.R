@@ -85,6 +85,11 @@
   )
 }
 
+.gsim_gbits_set_marker <- function(h1, h2, marker, h1_values, h2_values) {
+  invisible(.Call(C_gsim_gbits_set_marker, h1, h2, as.integer(marker),
+                  h1_values, h2_values))
+}
+
 .gsim_gbits_unpack <- function(haplotypes) {
   out <- .Call(C_gsim_gbits_unpack, haplotypes)
   sample_ids <- attr(haplotypes, "sample_ids", exact = TRUE)

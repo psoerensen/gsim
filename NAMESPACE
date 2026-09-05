@@ -2,6 +2,11 @@
 
 S3method(print,gsim)
 export(gsim)
+export(gsim_import_vcf)
 export(gsim_pedigree)
 export(gsim_pedigree_records)
+export(gsim_reference)
+export(gsim_simulate)
+importFrom(utils,head)
+importFrom(utils,object.size)
 useDynLib(gsim, .registration = TRUE)

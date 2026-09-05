@@ -81,7 +81,7 @@ testthat::test_that("HAP v1 writes exact header, ranges, and packed round trips"
   testthat::expect_identical(manifest$backend$gbits,
                              list(version = "0.20.0", abi = 4L))
   testthat::expect_identical(manifest$backend$gmat,
-                             list(version = "0.3.0", abi = 0L))
+                             list(version = "0.4.0", abi = 0L))
 
   reader <- gsim:::.gsim_hap_dataset_open(
     backend, metadata_backend, file.path(root, "dÃ¦ta set"))

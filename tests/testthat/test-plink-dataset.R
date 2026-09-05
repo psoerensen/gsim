@@ -145,7 +145,7 @@ testthat::test_that("dataset freezes exact BED, BIM, FAM, and allele bytes", {
   testthat::expect_identical(manifest$backend$gbits,
                              list(version = "0.20.0", abi = 4L))
   testthat::expect_identical(manifest$backend$gmat,
-                             list(version = "0.3.0", abi = 0L))
+                             list(version = "0.4.0", abi = 0L))
   testthat::expect_identical(manifest$publication_status, "published")
 })
 

@@ -39,6 +39,30 @@ Real `qgg::Glist` inputs are supported when `qgg` is installed. Scientific
 validation studies remain in packages such as `sblrbench`; they are not bundled
 with `gsim`.
 
+## Packed reference workflow
+
+The supported packed workflow imports a strict phased biallelic text VCF and
+then simulates HAPNEST-compatible founders plus Mendelian pedigree descendants
+without a dense whole-genome allele or genotype matrix:
+
+```r
+reference <- gsim_import_vcf(
+  "reference.vcf", genetic_map, "reference"
+)
+result <- gsim_simulate(
+  reference, pedigree, populations, ancestry_weights, mutation_age,
+  N, Ne, rho, seed = 123, output = "simulation", format = "hap"
+)
+```
+
+The optional native `gbits` and `gmat` libraries are located through
+`GSIM_GBITS_LIBRARY` and `GSIM_GMAT_LIBRARY`. VCF REF is bit 0/BIM A2, ALT is
+bit 1/BIM A1, and phased GT left/right order is retained as H1/H2. The importer
+accepts only uncompressed VCF, complete phased diploid GT, and uppercase
+biallelic A/C/G/T SNPs. The required map supplies exact cumulative cM values;
+there is no interpolation. Each chromosome is loaded, simulated, written, and
+released before the next.
+
 ## Pedigree and record workloads
 
 `gsim_pedigree()` creates scalable multigenerational pedigree domains with

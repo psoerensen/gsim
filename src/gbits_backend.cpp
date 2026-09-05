@@ -463,6 +463,42 @@ extern "C" SEXP C_gsim_gbits_zero(SEXP backend_pointer, SEXP individuals_sexp,
     return R_NilValue;
 }
 
+extern "C" SEXP C_gsim_gbits_set_marker(SEXP h1_pointer, SEXP h2_pointer,
+                                          SEXP marker_sexp, SEXP h1_values,
+                                          SEXP h2_values) {
+    try {
+        Packed* h1 = require_packed(h1_pointer);
+        Packed* h2 = require_packed(h2_pointer);
+        require_same_backend(h1, h2);
+        const int marker = scalar_int(marker_sexp, "marker", 1);
+        if (h1->individuals != h2->individuals || h1->markers != h2->markers ||
+            static_cast<std::uint64_t>(marker) > h1->markers) {
+            fail("packed phase dimensions or marker index are inconsistent");
+        }
+        if (TYPEOF(h1_values) != RAWSXP || TYPEOF(h2_values) != RAWSXP ||
+            static_cast<std::uint64_t>(XLENGTH(h1_values)) != h1->individuals ||
+            static_cast<std::uint64_t>(XLENGTH(h2_values)) != h1->individuals) {
+            fail("marker allele buffers must be raw vectors matching individuals");
+        }
+        const std::uint64_t marker_index = static_cast<std::uint64_t>(marker - 1);
+        for (std::uint64_t individual = 0; individual < h1->individuals; ++individual) {
+            const std::uint8_t first = RAW(h1_values)[static_cast<R_xlen_t>(individual)];
+            const std::uint8_t second = RAW(h2_values)[static_cast<R_xlen_t>(individual)];
+            if (first > 1u || second > 1u) fail("marker allele buffers must contain only 0 or 1");
+            check(h1->backend,
+                  h1->backend->set_allele(h1->handle, individual, marker_index, first),
+                  "gbits H1 marker write");
+            check(h2->backend,
+                  h2->backend->set_allele(h2->handle, individual, marker_index, second),
+                  "gbits H2 marker write");
+        }
+        return R_NilValue;
+    } catch (const std::exception& ex) {
+        Rf_error("gbits marker write: %s", ex.what());
+    }
+    return R_NilValue;
+}
+
 extern "C" SEXP C_gsim_gbits_unpack(SEXP pointer) {
     try {
         Packed* packed = require_packed(pointer);

@@ -19,6 +19,7 @@ extern SEXP C_gsim_meiosis_plan(SEXP, SEXP, SEXP, SEXP, SEXP);
 extern SEXP C_gsim_gbits_backend(SEXP);
 extern SEXP C_gsim_gbits_pack(SEXP, SEXP);
 extern SEXP C_gsim_gbits_zero(SEXP, SEXP, SEXP);
+extern SEXP C_gsim_gbits_set_marker(SEXP, SEXP, SEXP, SEXP, SEXP);
 extern SEXP C_gsim_gbits_unpack(SEXP);
 extern SEXP C_gsim_gbits_info(SEXP);
 extern SEXP C_gsim_gbits_close(SEXP);
@@ -54,6 +55,10 @@ extern SEXP C_gsim_gmat_write_bim(SEXP, SEXP);
 extern SEXP C_gsim_gmat_write_fam(SEXP, SEXP);
 extern SEXP C_gsim_gmat_read_bim(SEXP, SEXP);
 extern SEXP C_gsim_gmat_read_fam(SEXP, SEXP);
+extern SEXP C_gsim_gmat_vcf_open(SEXP, SEXP);
+extern SEXP C_gsim_gmat_vcf_start(SEXP, SEXP);
+extern SEXP C_gsim_gmat_vcf_next(SEXP);
+extern SEXP C_gsim_gmat_vcf_close(SEXP);
 
 static const R_CallMethodDef call_methods[] = {
     {"C_gsim_hapnest_founders", (DL_FUNC) &C_gsim_hapnest_founders, 17},
@@ -68,6 +73,7 @@ static const R_CallMethodDef call_methods[] = {
     {"C_gsim_gbits_backend", (DL_FUNC) &C_gsim_gbits_backend, 1},
     {"C_gsim_gbits_pack", (DL_FUNC) &C_gsim_gbits_pack, 2},
     {"C_gsim_gbits_zero", (DL_FUNC) &C_gsim_gbits_zero, 3},
+    {"C_gsim_gbits_set_marker", (DL_FUNC) &C_gsim_gbits_set_marker, 5},
     {"C_gsim_gbits_unpack", (DL_FUNC) &C_gsim_gbits_unpack, 1},
     {"C_gsim_gbits_info", (DL_FUNC) &C_gsim_gbits_info, 1},
     {"C_gsim_gbits_close", (DL_FUNC) &C_gsim_gbits_close, 1},
@@ -99,6 +105,10 @@ static const R_CallMethodDef call_methods[] = {
     {"C_gsim_gmat_write_fam", (DL_FUNC) &C_gsim_gmat_write_fam, 2},
     {"C_gsim_gmat_read_bim", (DL_FUNC) &C_gsim_gmat_read_bim, 2},
     {"C_gsim_gmat_read_fam", (DL_FUNC) &C_gsim_gmat_read_fam, 2},
+    {"C_gsim_gmat_vcf_open", (DL_FUNC) &C_gsim_gmat_vcf_open, 2},
+    {"C_gsim_gmat_vcf_start", (DL_FUNC) &C_gsim_gmat_vcf_start, 2},
+    {"C_gsim_gmat_vcf_next", (DL_FUNC) &C_gsim_gmat_vcf_next, 1},
+    {"C_gsim_gmat_vcf_close", (DL_FUNC) &C_gsim_gmat_vcf_close, 1},
     {NULL, NULL, 0}
 };
 

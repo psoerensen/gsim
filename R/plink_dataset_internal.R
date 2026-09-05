@@ -8,7 +8,11 @@
   "gmat_variant_metadata_count", "gmat_variant_metadata_get",
   "gmat_sample_metadata_create", "gmat_sample_metadata_close",
   "gmat_sample_metadata_write_fam", "gmat_sample_metadata_read_fam",
-  "gmat_sample_metadata_count", "gmat_sample_metadata_get"
+  "gmat_sample_metadata_count", "gmat_sample_metadata_get",
+  "gmat_phased_vcf_reader_open", "gmat_phased_vcf_reader_close",
+  "gmat_phased_vcf_reader_dimensions", "gmat_phased_vcf_reader_sample",
+  "gmat_phased_vcf_reader_variant", "gmat_phased_vcf_reader_chromosome",
+  "gmat_phased_vcf_reader_start_chromosome", "gmat_phased_vcf_reader_next"
 )
 
 .gsim_gmat_backend <- function(
