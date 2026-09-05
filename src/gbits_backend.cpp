@@ -14,6 +14,7 @@ namespace {
 
 using status_t = int;
 using handle_t = void;
+struct BedSinkInfo;
 
 struct Backend {
     std::uint32_t (*abi_version)();
@@ -47,6 +48,16 @@ struct Backend {
     status_t (*decode_genotypes)(const handle_t*, const handle_t*,
                                  std::uint8_t*, std::uint64_t,
                                  std::uint64_t);
+    status_t (*bed_open)(const char*, std::uint64_t, std::uint64_t, handle_t**);
+    status_t (*bed_close)(handle_t*);
+    status_t (*bed_read_variant)(handle_t*, std::uint64_t, std::int8_t*,
+                                 std::uint64_t);
+    status_t (*bed_sink_create)(const char*, std::uint64_t, std::uint32_t,
+                                std::uint64_t, handle_t**);
+    status_t (*bed_sink_append)(handle_t*, const handle_t*, const handle_t*);
+    status_t (*bed_sink_finalize)(handle_t*);
+    status_t (*bed_sink_info)(const handle_t*, BedSinkInfo*);
+    status_t (*bed_sink_close)(handle_t*);
     std::string version;
 };
 
@@ -55,6 +66,20 @@ struct Packed {
     handle_t* handle;
     std::uint64_t individuals;
     std::uint64_t markers;
+};
+
+struct BedSinkInfo {
+    std::uint64_t individual_count;
+    std::uint64_t variant_count;
+    std::uint64_t bytes_written;
+    std::uint64_t conversion_buffer_bytes;
+    std::uint64_t lifecycle_object_bytes;
+    int state;
+};
+
+struct BedSink {
+    Backend* backend;
+    handle_t* handle;
 };
 
 [[noreturn]] void fail(const std::string& message) {
@@ -101,6 +126,17 @@ void packed_finalizer(SEXP pointer) {
     R_ClearExternalPtr(pointer);
 }
 
+void bed_sink_finalizer(SEXP pointer) {
+    BedSink* sink = static_cast<BedSink*>(R_ExternalPtrAddr(pointer));
+    if (sink != nullptr) {
+        if (sink->handle != nullptr && sink->backend != nullptr) {
+            (void)sink->backend->bed_sink_close(sink->handle);
+        }
+        delete sink;
+    }
+    R_ClearExternalPtr(pointer);
+}
+
 Backend* require_backend(SEXP pointer) {
     if (TYPEOF(pointer) != EXTPTRSXP) fail("gbits backend is invalid");
     Backend* backend = static_cast<Backend*>(R_ExternalPtrAddr(pointer));
@@ -115,6 +151,15 @@ Packed* require_packed(SEXP pointer) {
         fail("packed haplotypes have been released");
     }
     return packed;
+}
+
+BedSink* require_bed_sink(SEXP pointer) {
+    if (TYPEOF(pointer) != EXTPTRSXP) fail("BED sink is invalid");
+    BedSink* sink = static_cast<BedSink*>(R_ExternalPtrAddr(pointer));
+    if (sink == nullptr || sink->handle == nullptr) {
+        fail("BED sink has been released");
+    }
+    return sink;
 }
 
 void require_same_backend(const Packed* first, const Packed* second) {
@@ -138,6 +183,26 @@ int scalar_int(SEXP value, const char* name, int lower = 0) {
         fail(std::string(name) + " must be an integer scalar");
     }
     return INTEGER(value)[0];
+}
+
+bool scalar_bool(SEXP value, const char* name) {
+    if (TYPEOF(value) != LGLSXP || XLENGTH(value) != 1 ||
+        LOGICAL(value)[0] == NA_LOGICAL) {
+        fail(std::string(name) + " must be one logical value");
+    }
+    return LOGICAL(value)[0] == TRUE;
+}
+
+std::string scalar_utf8(SEXP value, const char* name) {
+    if (TYPEOF(value) != STRSXP || XLENGTH(value) != 1 ||
+        STRING_ELT(value, 0) == NA_STRING) {
+        fail(std::string(name) + " must be one nonmissing string");
+    }
+    const char* text = Rf_translateCharUTF8(STRING_ELT(value, 0));
+    if (text == nullptr || text[0] == '\0') {
+        fail(std::string(name) + " must not be empty");
+    }
+    return text;
 }
 
 SEXP make_packed(SEXP backend_pointer, handle_t* handle,
@@ -210,6 +275,22 @@ extern "C" SEXP C_gsim_gbits_backend(SEXP symbols) {
                 symbols, "gbits_phased_haplotype_make_gamete");
             backend->decode_genotypes = symbol<decltype(backend->decode_genotypes)>(
                 symbols, "gbits_phased_haplotype_decode_genotypes");
+            backend->bed_open = symbol<decltype(backend->bed_open)>(
+                symbols, "gbits_bed_open");
+            backend->bed_close = symbol<decltype(backend->bed_close)>(
+                symbols, "gbits_bed_close");
+            backend->bed_read_variant = symbol<decltype(backend->bed_read_variant)>(
+                symbols, "gbits_bed_read_variant");
+            backend->bed_sink_create = symbol<decltype(backend->bed_sink_create)>(
+                symbols, "gbits_bed_sink_create");
+            backend->bed_sink_append = symbol<decltype(backend->bed_sink_append)>(
+                symbols, "gbits_bed_sink_append_phased");
+            backend->bed_sink_finalize = symbol<decltype(backend->bed_sink_finalize)>(
+                symbols, "gbits_bed_sink_finalize");
+            backend->bed_sink_info = symbol<decltype(backend->bed_sink_info)>(
+                symbols, "gbits_bed_sink_get_info");
+            backend->bed_sink_close = symbol<decltype(backend->bed_sink_close)>(
+                symbols, "gbits_bed_sink_close");
             const std::uint32_t abi = backend->abi_version();
             if (abi != 4u) {
                 fail("gbits ABI mismatch: gsim requires ABI 4");
@@ -493,6 +574,157 @@ extern "C" SEXP C_gsim_gbits_decode_genotypes(SEXP h1_pointer,
         return out;
     } catch (const std::exception& ex) {
         Rf_error("gbits genotype decoding: %s", ex.what());
+    }
+    return R_NilValue;
+}
+
+extern "C" SEXP C_gsim_gbits_bed_sink_create(
+    SEXP backend_pointer, SEXP path_sexp, SEXP individuals_sexp,
+    SEXP overwrite_sexp, SEXP buffer_variants_sexp) {
+    try {
+        Backend* backend = require_backend(backend_pointer);
+        const std::string path = scalar_utf8(path_sexp, "BED path");
+        const int individuals = scalar_int(individuals_sexp, "individuals", 1);
+        const int buffer_variants =
+            scalar_int(buffer_variants_sexp, "buffer_variants", 1);
+        const bool overwrite = scalar_bool(overwrite_sexp, "overwrite");
+        handle_t* handle = nullptr;
+        check(backend,
+              backend->bed_sink_create(
+                  path.c_str(), static_cast<std::uint64_t>(individuals),
+                  overwrite ? 1u : 0u,
+                  static_cast<std::uint64_t>(buffer_variants), &handle),
+              "gbits BED sink creation");
+        BedSink* sink = nullptr;
+        try {
+            sink = new BedSink{backend, handle};
+        } catch (...) {
+            (void)backend->bed_sink_close(handle);
+            throw;
+        }
+        SEXP pointer = PROTECT(R_MakeExternalPtr(sink, R_NilValue,
+                                                 backend_pointer));
+        R_RegisterCFinalizerEx(pointer, bed_sink_finalizer, TRUE);
+        UNPROTECT(1);
+        return pointer;
+    } catch (const std::exception& ex) {
+        Rf_error("gbits BED sink creation: %s", ex.what());
+    }
+    return R_NilValue;
+}
+
+extern "C" SEXP C_gsim_gbits_bed_sink_append(
+    SEXP sink_pointer, SEXP h1_pointer, SEXP h2_pointer) {
+    try {
+        BedSink* sink = require_bed_sink(sink_pointer);
+        Packed* h1 = require_packed(h1_pointer);
+        Packed* h2 = require_packed(h2_pointer);
+        if (sink->backend != h1->backend || sink->backend != h2->backend) {
+            fail("BED sink and packed phases originate from different gbits backends");
+        }
+        check(sink->backend,
+              sink->backend->bed_sink_append(sink->handle, h1->handle,
+                                             h2->handle),
+              "gbits BED chromosome append");
+        return sink_pointer;
+    } catch (const std::exception& ex) {
+        Rf_error("gbits BED chromosome append: %s", ex.what());
+    }
+    return R_NilValue;
+}
+
+extern "C" SEXP C_gsim_gbits_bed_sink_finalize(SEXP sink_pointer) {
+    try {
+        BedSink* sink = require_bed_sink(sink_pointer);
+        check(sink->backend, sink->backend->bed_sink_finalize(sink->handle),
+              "gbits BED sink finalization");
+        return sink_pointer;
+    } catch (const std::exception& ex) {
+        Rf_error("gbits BED sink finalization: %s", ex.what());
+    }
+    return R_NilValue;
+}
+
+extern "C" SEXP C_gsim_gbits_bed_sink_cancel(SEXP sink_pointer) {
+    try {
+        BedSink* sink = require_bed_sink(sink_pointer);
+        check(sink->backend, sink->backend->bed_sink_close(sink->handle),
+              "gbits BED sink cancellation");
+        sink->handle = nullptr;
+        return R_NilValue;
+    } catch (const std::exception& ex) {
+        Rf_error("gbits BED sink cancellation: %s", ex.what());
+    }
+    return R_NilValue;
+}
+
+extern "C" SEXP C_gsim_gbits_bed_sink_info(SEXP sink_pointer) {
+    try {
+        BedSink* sink = require_bed_sink(sink_pointer);
+        BedSinkInfo info{};
+        check(sink->backend,
+              sink->backend->bed_sink_info(sink->handle, &info),
+              "gbits BED sink information");
+        SEXP values = PROTECT(Rf_allocVector(REALSXP, 5));
+        REAL(values)[0] = static_cast<double>(info.individual_count);
+        REAL(values)[1] = static_cast<double>(info.variant_count);
+        REAL(values)[2] = static_cast<double>(info.bytes_written);
+        REAL(values)[3] = static_cast<double>(info.conversion_buffer_bytes);
+        REAL(values)[4] = static_cast<double>(info.lifecycle_object_bytes);
+        set_names(values, {"individual_count", "variant_count",
+                           "bytes_written", "conversion_buffer_bytes",
+                           "lifecycle_object_bytes"});
+        const char* state = info.state == 0 ? "open"
+                            : info.state == 1 ? "finalized"
+                                              : "failed";
+        SEXP state_value = PROTECT(Rf_mkString(state));
+        Rf_setAttrib(values, Rf_install("state"), state_value);
+        UNPROTECT(2);
+        return values;
+    } catch (const std::exception& ex) {
+        Rf_error("gbits BED sink information: %s", ex.what());
+    }
+    return R_NilValue;
+}
+
+extern "C" SEXP C_gsim_gbits_bed_read_all(
+    SEXP backend_pointer, SEXP path_sexp, SEXP individuals_sexp,
+    SEXP variants_sexp) {
+    try {
+        Backend* backend = require_backend(backend_pointer);
+        const std::string path = scalar_utf8(path_sexp, "BED path");
+        const int individuals = scalar_int(individuals_sexp, "individuals", 1);
+        const int variants = scalar_int(variants_sexp, "variants", 1);
+        handle_t* reader = nullptr;
+        check(backend,
+              backend->bed_open(path.c_str(),
+                                static_cast<std::uint64_t>(individuals),
+                                static_cast<std::uint64_t>(variants), &reader),
+              "gbits BED reader open");
+        SEXP output = PROTECT(Rf_allocMatrix(INTSXP, individuals, variants));
+        std::vector<std::int8_t> record(static_cast<std::size_t>(individuals));
+        try {
+            for (int marker = 0; marker < variants; ++marker) {
+                check(backend,
+                      backend->bed_read_variant(
+                          reader, static_cast<std::uint64_t>(marker),
+                          record.data(), static_cast<std::uint64_t>(individuals)),
+                      "gbits BED reader decode");
+                for (int individual = 0; individual < individuals; ++individual) {
+                    INTEGER(output)[individual + individuals * marker] =
+                        static_cast<int>(record[static_cast<std::size_t>(individual)]);
+                }
+            }
+        } catch (...) {
+            (void)backend->bed_close(reader);
+            UNPROTECT(1);
+            throw;
+        }
+        check(backend, backend->bed_close(reader), "gbits BED reader close");
+        UNPROTECT(1);
+        return output;
+    } catch (const std::exception& ex) {
+        Rf_error("gbits BED validation decode: %s", ex.what());
     }
     return R_NilValue;
 }

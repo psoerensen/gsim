@@ -1,7 +1,7 @@
 Package: gsim
 Type: Package
 Title: Genomic Simulation for Validation Studies
-Version: 0.3.0
+Version: 0.4.0
 Depends: R (>= 3.5.0)
 Authors@R: person("Peter", "Sørensen", email = "peter.sorensen@r-qgg.org",
     role = c("aut", "cre"))

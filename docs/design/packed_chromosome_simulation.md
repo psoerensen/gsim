@@ -73,9 +73,8 @@ requesting the next chromosome.
 
 ## Deferred work
 
-VCF ingestion, persistent `gmat` metadata, BED/BIM/FAM writing, multithreading,
-SIMD, phenotype integration, and whole-genome retained objects are outside this
-milestone.  The next milestone should give `gbits` a SNP-major BED sink that
-consumes the two chromosome-local phase handles directly, computes PLINK
-dosages without a dense decoded matrix, and lets `gmat` supply validated BIM/FAM
-identity and ordering metadata.
+VCF ingestion, persistent `gmat` metadata, BIM/FAM writing, multithreading,
+SIMD, phenotype integration, and whole-genome retained objects remain outside
+this milestone. `gbits` 0.19 now supplies the separately qualified direct
+SNP-major BED sink described in `direct_packed_bed.md`; BIM/FAM identity,
+ordering, and allele-orientation metadata remain deferred to `gmat`.

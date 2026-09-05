@@ -18,7 +18,11 @@
   "gbits_phased_haplotype_copy_interval",
   "gbits_phased_haplotype_copy_filtered_segment",
   "gbits_phased_haplotype_make_gamete",
-  "gbits_phased_haplotype_decode_genotypes"
+  "gbits_phased_haplotype_decode_genotypes",
+  "gbits_bed_open", "gbits_bed_close", "gbits_bed_read_variant",
+  "gbits_bed_sink_create", "gbits_bed_sink_append_phased",
+  "gbits_bed_sink_finalize", "gbits_bed_sink_get_info",
+  "gbits_bed_sink_close"
 )
 
 .gsim_gbits_backend <- function(
@@ -46,6 +50,7 @@
   pointer <- .Call(C_gsim_gbits_backend, addresses)
   attr(pointer, "library") <- path
   attr(pointer, "dll") <- dll
+  attr(pointer, "gbits_abi") <- 4L
   class(pointer) <- "gsim_gbits_backend"
   pointer
 }

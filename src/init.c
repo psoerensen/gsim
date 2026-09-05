@@ -26,6 +26,12 @@ extern SEXP C_gsim_gbits_copy_filtered(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP,
 extern SEXP C_gsim_gbits_make_gamete(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP,
                                      SEXP);
 extern SEXP C_gsim_gbits_decode_genotypes(SEXP, SEXP);
+extern SEXP C_gsim_gbits_bed_sink_create(SEXP, SEXP, SEXP, SEXP, SEXP);
+extern SEXP C_gsim_gbits_bed_sink_append(SEXP, SEXP, SEXP);
+extern SEXP C_gsim_gbits_bed_sink_finalize(SEXP);
+extern SEXP C_gsim_gbits_bed_sink_cancel(SEXP);
+extern SEXP C_gsim_gbits_bed_sink_info(SEXP);
+extern SEXP C_gsim_gbits_bed_read_all(SEXP, SEXP, SEXP, SEXP);
 
 static const R_CallMethodDef call_methods[] = {
     {"C_gsim_hapnest_founders", (DL_FUNC) &C_gsim_hapnest_founders, 17},
@@ -46,6 +52,12 @@ static const R_CallMethodDef call_methods[] = {
     {"C_gsim_gbits_copy_filtered", (DL_FUNC) &C_gsim_gbits_copy_filtered, 8},
     {"C_gsim_gbits_make_gamete", (DL_FUNC) &C_gsim_gbits_make_gamete, 7},
     {"C_gsim_gbits_decode_genotypes", (DL_FUNC) &C_gsim_gbits_decode_genotypes, 2},
+    {"C_gsim_gbits_bed_sink_create", (DL_FUNC) &C_gsim_gbits_bed_sink_create, 5},
+    {"C_gsim_gbits_bed_sink_append", (DL_FUNC) &C_gsim_gbits_bed_sink_append, 3},
+    {"C_gsim_gbits_bed_sink_finalize", (DL_FUNC) &C_gsim_gbits_bed_sink_finalize, 1},
+    {"C_gsim_gbits_bed_sink_cancel", (DL_FUNC) &C_gsim_gbits_bed_sink_cancel, 1},
+    {"C_gsim_gbits_bed_sink_info", (DL_FUNC) &C_gsim_gbits_bed_sink_info, 1},
+    {"C_gsim_gbits_bed_read_all", (DL_FUNC) &C_gsim_gbits_bed_read_all, 4},
     {NULL, NULL, 0}
 };
 
