@@ -135,35 +135,65 @@
   )
 }
 
+.gsim_align_marker_numeric <- function(x, marker_ids, name) {
+  if (!is.numeric(x) || !is.null(dim(x)) || !length(x)) {
+    .gsim_stop(name, " must be a numeric scalar or marker-specific vector.")
+  }
+
+  if (length(x) == 1L) {
+    value <- rep.int(as.numeric(x), length(marker_ids))
+    alignment <- "scalar"
+  } else {
+    marker_names <- names(x)
+    if (length(x) != length(marker_ids)) {
+      .gsim_stop(name, " must be scalar or have one value per marker.")
+    }
+    if (is.null(marker_names) || anyNA(marker_names) ||
+        any(!nzchar(marker_names))) {
+      .gsim_stop(name, " must have nonempty names for every marker.")
+    }
+    if (anyDuplicated(marker_names)) {
+      duplicated <- unique(marker_names[duplicated(marker_names)])
+      .gsim_stop(
+        name, " marker names must be unique; duplicated: ",
+        paste(utils::head(duplicated, 10L), collapse = ", "), "."
+      )
+    }
+    missing <- setdiff(marker_ids, marker_names)
+    unexpected <- setdiff(marker_names, marker_ids)
+    if (length(missing) || length(unexpected)) {
+      detail <- c(
+        if (length(missing)) paste0(
+          "missing: ", paste(utils::head(missing, 10L), collapse = ", ")
+        ),
+        if (length(unexpected)) paste0(
+          "unexpected: ",
+          paste(utils::head(unexpected, 10L), collapse = ", ")
+        )
+      )
+      .gsim_stop(
+        name, " names must exactly match the simulation markers (",
+        paste(detail, collapse = "; "), ")."
+      )
+    }
+    value <- as.numeric(x[match(marker_ids, marker_names)])
+    alignment <- "canonical_marker_order"
+  }
+  names(value) <- marker_ids
+  list(value = value, alignment = alignment)
+}
+
 .gsim_prepare_marker_multipliers <- function(marker_multipliers, marker_ids) {
   supplied <- !is.null(marker_multipliers)
   if (!supplied) {
     value <- stats::setNames(rep(1, length(marker_ids)), marker_ids)
+    alignment <- "canonical_marker_order"
   } else {
-    if (!is.numeric(marker_multipliers) || !is.null(dim(marker_multipliers)) ||
-        length(marker_multipliers) != length(marker_ids)) {
-      .gsim_stop(
-        "marker_multipliers must be a numeric vector with one value per marker."
-      )
-    }
-    marker_names <- names(marker_multipliers)
-    if (is.null(marker_names) || length(marker_names) != length(marker_ids) ||
-        anyNA(marker_names) || any(!nzchar(marker_names))) {
-      .gsim_stop(
-        "marker_multipliers must have nonempty names for every marker."
-      )
-    }
-    if (anyDuplicated(marker_names)) {
-      .gsim_stop("marker_multipliers marker names must be unique.")
-    }
-    if (!setequal(marker_names, marker_ids)) {
-      .gsim_stop(
-        "marker_multipliers names must exactly match the simulation markers."
-      )
-    }
-    value <- marker_multipliers[match(marker_ids, marker_names)]
-    storage.mode(value) <- "double"
-    names(value) <- marker_ids
+    aligned <- .gsim_align_marker_numeric(
+      marker_multipliers, marker_ids, "marker_multipliers"
+    )
+    value <- aligned$value
+    alignment <- aligned$alignment
     if (any(!is.finite(value)) || any(value <= 0)) {
       .gsim_stop("marker_multipliers values must be finite and strictly positive.")
     }
@@ -173,7 +203,7 @@
     value = value,
     settings = list(
       policy = if (supplied) "supplied" else "unit",
-      alignment = "canonical_marker_order",
+      alignment = alignment,
       n_markers = length(marker_ids),
       minimum = min(value),
       maximum = max(value),
@@ -181,6 +211,160 @@
       all_ones = all(value == 1)
     )
   )
+}
+
+.gsim_glist_marker_metadata <- function(Glist, field, id_field, marker_ids,
+                                        label) {
+  values_source <- Glist[[field]]
+  ids_source <- Glist[[id_field]]
+  if (is.null(values_source)) {
+    .gsim_stop(
+      label, " is required but Glist$", field, " is unavailable."
+    )
+  }
+
+  chunks <- if (is.list(values_source)) values_source else list(values_source)
+  id_chunks <- if (is.list(ids_source)) ids_source else list(ids_source)
+  metadata_ids <- character(0)
+  metadata_values <- numeric(0)
+
+  for (i in seq_along(chunks)) {
+    values <- chunks[[i]]
+    if (!is.numeric(values) || !is.null(dim(values))) {
+      .gsim_stop("Glist$", field, " must contain numeric marker metadata.")
+    }
+    local_names <- names(values)
+    if (!is.null(local_names) && length(local_names) == length(values) &&
+        !anyNA(local_names) && all(nzchar(local_names))) {
+      ids <- local_names
+    } else {
+      if (i > length(id_chunks)) {
+        .gsim_stop(
+          "Glist$", field, " cannot be aligned through Glist$", id_field, "."
+        )
+      }
+      ids <- as.character(id_chunks[[i]])
+      if (length(ids) != length(values)) {
+        .gsim_stop(
+          "Glist$", field, " and Glist$", id_field,
+          " have inconsistent lengths."
+        )
+      }
+    }
+    metadata_ids <- c(metadata_ids, ids)
+    metadata_values <- c(metadata_values, as.numeric(values))
+  }
+
+  if (!length(metadata_ids) || anyNA(metadata_ids) || any(!nzchar(metadata_ids))) {
+    .gsim_stop("Glist$", field, " has missing or empty marker IDs.")
+  }
+  if (anyDuplicated(metadata_ids)) {
+    duplicated <- unique(metadata_ids[duplicated(metadata_ids)])
+    .gsim_stop(
+      "Glist$", field, " has duplicated marker IDs: ",
+      paste(utils::head(duplicated, 10L), collapse = ", "), "."
+    )
+  }
+  pos <- match(marker_ids, metadata_ids)
+  if (anyNA(pos)) {
+    missing <- marker_ids[is.na(pos)]
+    .gsim_stop(
+      "Glist$", field, " is missing simulation markers: ",
+      paste(utils::head(missing, 10L), collapse = ", "), "."
+    )
+  }
+  stats::setNames(metadata_values[pos], marker_ids)
+}
+
+.gsim_validate_variance_base <- function(x, marker_ids, name,
+                                         upper = Inf) {
+  bad <- which(!is.finite(x) | x <= 0 | x >= upper)
+  if (length(bad)) {
+    .gsim_stop(
+      name, " must be finite and strictly ",
+      if (is.finite(upper)) paste0("between 0 and ", upper) else "positive",
+      "; invalid markers: ",
+      paste(utils::head(marker_ids[bad], 10L), collapse = ", "), "."
+    )
+  }
+  invisible(TRUE)
+}
+
+.gsim_variance_exponents <- function(a, b, c) {
+  values <- list(a = a, b = b, c = c)
+  valid <- vapply(
+    values,
+    function(x) is.numeric(x) && length(x) == 1L && is.finite(x),
+    logical(1)
+  )
+  if (!all(valid)) {
+    .gsim_stop("a, b, and c must each be a finite numeric scalar.")
+  }
+  unlist(values, use.names = TRUE)
+}
+
+.gsim_prepare_variance_model <- function(marker_multipliers, marker_ids,
+                                         a, b, c, maf, ld_score,
+                                         annotation_score, sources) {
+  exponents <- .gsim_variance_exponents(a, b, c)
+  derived <- any(exponents != 0)
+  if (derived && !is.null(marker_multipliers)) {
+    .gsim_stop(
+      "marker_multipliers cannot be combined with nonzero a, b, or c."
+    )
+  }
+
+  if (!derived) {
+    out <- .gsim_prepare_marker_multipliers(marker_multipliers, marker_ids)
+    out$settings$variance_model <- if (is.null(marker_multipliers)) {
+      "constant"
+    } else {
+      "explicit_marker_multipliers"
+    }
+  } else {
+    log_weight <- stats::setNames(rep(0, length(marker_ids)), marker_ids)
+    if (a != 0) {
+      .gsim_validate_variance_base(maf, marker_ids, "maf", upper = 1)
+      log_weight <- log_weight + a * log(maf * (1 - maf))
+    }
+    if (b != 0) {
+      .gsim_validate_variance_base(ld_score, marker_ids, "ld_score")
+      log_weight <- log_weight + b * log(ld_score)
+    }
+    if (c != 0) {
+      .gsim_validate_variance_base(
+        annotation_score, marker_ids, "annotation_score"
+      )
+      log_weight <- log_weight + c * log(annotation_score)
+    }
+    value <- exp(log_weight)
+    bad <- which(!is.finite(value) | value <= 0)
+    if (length(bad)) {
+      .gsim_stop(
+        "Derived variance weights must be finite and strictly positive; ",
+        "invalid markers: ",
+        paste(utils::head(marker_ids[bad], 10L), collapse = ", "), "."
+      )
+    }
+    out <- list(
+      value = value,
+      settings = list(
+        policy = "derived",
+        alignment = "canonical_marker_order",
+        n_markers = length(marker_ids),
+        minimum = min(value),
+        maximum = max(value),
+        geometric_mean = exp(mean(log(value))),
+        all_ones = all(value == 1),
+        variance_model = "derived"
+      )
+    )
+  }
+
+  out$settings$exponents <- exponents
+  out$settings$sources <- sources
+  out$settings$formula <- "[p(1-p)]^a * ld_score^b * annotation_score^c"
+  out
 }
 
 .gsim_marker_ids_from_glist <- function(Glist, rsids = NULL) {

@@ -75,6 +75,28 @@ Real `qgg::Glist` inputs are supported when `qgg` is installed. Scientific
 validation studies remain in packages such as `sblrbench`; they are not bundled
 with `gsim`.
 
+When a Glist contains `maf` and `ldscores` metadata, conditional effect-variance
+weights can be derived without loading the complete genotype matrix. The scalar
+annotation score is separate from the SBayesRC annotation matrix `A`:
+
+```r
+marker_ids <- as.character(unlist(Glist$rsidsLD, use.names = FALSE))
+q <- setNames(rep(0.05, length(marker_ids)), marker_ids)
+s <- setNames(rep(1, length(marker_ids)), marker_ids)
+sim <- gsim(
+  Glist = Glist, architecture = "bayesr",
+  causal_probability = q,
+  a = -0.4, b = -1, c = 0.5, annotation_score = s,
+  seed = 4
+)
+```
+
+This illustrates a HAPNEST-like variance parameterization, not a separate
+architecture or a recommended universal default. `causal_probability` controls
+non-null membership; active mixture proportions remain conditional on `pi`;
+`a`, `b`, `c`, and `annotation_score` control variance only after a marker is
+causal. Effects scale by the square root of the resulting variance weight.
+
 ## Packed reference workflow
 
 The supported packed workflow explicitly separates a real reference panel, an

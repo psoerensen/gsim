@@ -74,10 +74,56 @@ variance. When `scale_effects = TRUE`, the established trait-wise post-draw
 calibration rescales effects to realized `vg`; it does not change component
 membership.
 
-No `a`, `b`, or `c` convenience parameterization is added. A study can calculate
-`w_j` from MAF, annotations, or another fixed model and pass the resulting named
-vector directly. This keeps the simulation truth explicit and avoids a second
-partly overlapping variance interface.
+`gsim()` can either accept `w_j` directly through `marker_multipliers`, or derive
+it from marker metadata:
+
+```text
+w_j = [p_j(1-p_j)]^a * r_j^b * s_j^c
+```
+
+Here `p_j` is MAF, `r_j` is LD score, `s_j` is one scalar annotation score, and
+`a`, `b`, and `c` are finite scalar exponents. Computation uses the fixed order
+
+```text
+log(w_j) = a*log(p_j(1-p_j)) + b*log(r_j) + c*log(s_j)
+w_j = exp(log(w_j)).
+```
+
+Only terms with nonzero exponents are resolved or validated. Their bases must
+be finite and strictly positive; MAF must additionally be strictly below one.
+Underflow, overflow, and any non-positive result are errors and identify the
+affected marker IDs. There is no flooring, truncation, winsorization, or
+normalization. In particular, LD scores are not floored at 0.0001.
+
+The default exponents are zero, so the derived model is not requested and unit
+weights remain the default. Supplying `marker_multipliers` directly takes the
+place of the derived model; combining direct multipliers with any nonzero
+exponent is rejected rather than multiplied twice. A scalar direct multiplier
+is repeated, while every non-scalar external marker vector must have complete,
+unique, nonempty names whose set exactly matches the canonical marker IDs.
+
+In Glist mode, `p_j` is obtained from `Glist$maf` aligned through
+`Glist$rsids`, and `r_j` from `Glist$ldscores` aligned through
+`Glist$rsidsLD`, unless an explicit vector is supplied. Metadata are resolved
+before causal selection without reading genotypes. Once components have been
+drawn, the complete weight vector is subset to causal markers by the existing
+effect path, and only causal genotype columns are requested from `getG()`.
+For in-memory or internally simulated genotypes, MAF comes from the existing
+genotype-based calculation unless supplied; LD score is never calculated by
+this milestone and must be supplied when `b` is nonzero.
+
+`annotation_score` is exactly one positive scalar score per marker and affects
+only conditional effect variance. It is not inferred from, combined with, or
+reinterpreted as the SBayesRC marker-by-annotation matrix `A`; `A` and `alpha`
+retain their existing role in component probabilities. The two mechanisms may
+be used together because they operate on separate parts of the model.
+
+The formula includes a parameterization used by HAPNEST, but it is implemented
+here as a general marker-specific variance model integrated with Glist. It is
+not a separate architecture and the illustrated exponents are not universal
+defaults. The pre-existing `maf_dependent` architecture retains its additional
+normalized `[2p_j(1-p_j)]^maf_exponent` factor, including when combined with
+direct or derived marker multipliers.
 
 ## RNG and returned truth
 
@@ -90,7 +136,9 @@ components, effects, and phenotypes remain unchanged.
 
 The result contains the canonical effective `causal_probability` and
 `marker_multipliers` vectors. The causal-marker table records each selected
-marker's probability and variance weight. Compact settings record the policy,
-alignment, range, mean, and expected causal count `sum(q_j)`. The existing full
-component-probability surface remains optional through
-`return_marker_probabilities`.
+marker's probability and final variance weight. Compact settings record the
+variance-model type, exponents, formula, metadata sources, alignment, weight
+range and geometric mean; full metadata vectors are not duplicated there.
+Causal settings retain the policy, alignment, range, mean, and expected causal
+count `sum(q_j)`. The existing full component-probability surface remains
+optional through `return_marker_probabilities`.

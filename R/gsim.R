@@ -33,15 +33,14 @@
 #'   `n_causal`, `architecture = "fixed"`, `architecture = "clustered"`, or
 #'   annotation-driven component probabilities.
 #' @param marker_multipliers Optional positive marker-specific relative
-#'   active-effect variance weights, \eqn{w_j}. A supplied vector must have
-#'   unique nonempty names exactly matching the simulation markers and is
-#'   aligned once to canonical marker order. The multiplier is applied only to
-#'   non-null effect draws, separately from component probabilities and the
-#'   component multiplier. `NULL` gives unit multipliers. Values are not
-#'   clipped or normalized. The aligned vector and compact provenance are
-#'   returned. SBayesRV is one possible research motivation for supplying this
-#'   generic fixed variance truth; `gsim()` does not implement SBayesRV
-#'   inference. Non-unit multipliers are not defined for
+#'   active-effect variance weights, \eqn{w_j}. A scalar is repeated; a
+#'   marker-specific vector must have unique nonempty names exactly matching
+#'   the simulation markers and is aligned once to canonical marker order.
+#'   Direct multipliers cannot be combined with nonzero `a`, `b`, or `c`.
+#'   The multiplier is applied only to non-null effect draws, separately from
+#'   component probabilities and the component multiplier. `NULL` gives unit
+#'   multipliers when the derived model is not requested. Values are not
+#'   clipped or normalized. Non-unit multipliers are not defined for
 #'   `architecture = "fixed"`, where `beta` supplies realized effects directly.
 #' @param n_causal Optional exact number of non-null markers. If supplied,
 #'   markers are sampled without replacement using their annotation-informed
@@ -52,7 +51,21 @@
 #' @param annotation_model `"none"` or `"sbayesrc"`.
 #' @param rg,re Genetic-effect and residual correlation matrices (or scalar
 #'   off-diagonal correlations for multiple traits).
-#' @param maf Optional marker MAFs, named by marker ID or in marker order.
+#' @param maf Optional marker MAF. A scalar is repeated; a marker-specific
+#'   vector must be named by marker ID. In Glist mode, `Glist$maf`, aligned
+#'   through `Glist$rsids`, supplies MAF when `a` is nonzero and `maf` is NULL.
+#' @param a,b,c Finite scalar exponents in the marker-specific conditional
+#'   effect-variance model
+#'   \eqn{w_j=[p_j(1-p_j)]^a r_j^b s_j^c}. All default to zero. The model is
+#'   requested when any exponent is nonzero.
+#' @param ld_score Optional marker LD score \eqn{r_j}. A scalar is repeated; a
+#'   marker-specific vector must be named by marker ID. In Glist mode,
+#'   `Glist$ldscores`, aligned through `Glist$rsidsLD`, is used when `b` is
+#'   nonzero and `ld_score` is NULL. LD scores are not calculated or floored.
+#' @param annotation_score Optional single positive scalar annotation score
+#'   \eqn{s_j} per marker. A scalar is repeated; a marker-specific vector must
+#'   be named by marker ID. This controls conditional effect variance only and
+#'   is never inferred from the SBayesRC `A` matrix.
 #' @param maf_exponent For `maf_dependent`, effect variance is proportional to
 #'   `[2p(1-p)]^maf_exponent` before realized-variance calibration.
 #' @param block_id Optional marker block labels for `clustered`.
@@ -79,7 +92,8 @@
 #'   effects and states, annotation truth, probability surfaces, the complete
 #'   canonical `causal_probability` and `marker_multipliers` vectors, compact
 #'   provenance under `settings$causal_probability` and
-#'   `settings$marker_multipliers`, and optional summary statistics.
+#'   `settings$marker_multipliers` (including the variance formula, exponents,
+#'   metadata sources, and alignment), and optional summary statistics.
 #' @export
 gsim <- function(
   Glist = NULL,
@@ -103,6 +117,11 @@ gsim <- function(
   rg = NULL,
   re = 0,
   maf = NULL,
+  a = 0,
+  b = 0,
+  c = 0,
+  ld_score = NULL,
+  annotation_score = NULL,
   maf_exponent = -0.5,
   block_id = NULL,
   n_hot_blocks = NULL,
@@ -201,6 +220,13 @@ gsim <- function(
   }
 
   m_total <- length(marker_ids)
+  variance_exponents <- .gsim_variance_exponents(a, b, c)
+  derived_variance <- any(variance_exponents != 0)
+  if (derived_variance && architecture == "fixed") {
+    .gsim_stop(
+      "Nonzero a, b, or c is not defined for architecture = 'fixed'."
+    )
+  }
   causal_spec <- .gsim_prepare_causal_probability(
     causal_probability, marker_ids
   )
@@ -227,26 +253,102 @@ gsim <- function(
       )
     }
   }
-  multiplier <- .gsim_prepare_marker_multipliers(
-    marker_multipliers, marker_ids
+  annotation <- .gsim_prepare_annotations(
+    A, marker_ids, n_annotations, annotation_types, annotation_prob
+  )
+  A <- annotation$A
+
+  aligned_maf <- if (!is.null(maf)) {
+    .gsim_align_marker_numeric(maf, marker_ids, "maf")
+  } else {
+    NULL
+  }
+  maf_all <- if (!is.null(aligned_maf)) {
+    aligned_maf$value
+  } else if (!is.null(W_full_raw)) {
+    stats::setNames(.gsim_maf_from_W(W_full_raw), marker_ids)
+  } else if (variance_exponents[["a"]] != 0) {
+    .gsim_glist_marker_metadata(
+      Glist, "maf", "rsids", marker_ids, "maf"
+    )
+  } else {
+    stats::setNames(rep(NA_real_, m_total), marker_ids)
+  }
+  maf_source <- if (variance_exponents[["a"]] == 0) {
+    list(source = "unused", alignment = "not_applicable")
+  } else if (!is.null(maf)) {
+    list(
+      source = "explicit_input",
+      alignment = aligned_maf$alignment
+    )
+  } else if (mode == "Glist") {
+    list(source = "Glist", alignment = "canonical_marker_order")
+  } else {
+    list(source = "existing_calculation", alignment = "canonical_marker_order")
+  }
+
+  ld_all <- NULL
+  ld_source <- list(source = "unused", alignment = "not_applicable")
+  if (variance_exponents[["b"]] != 0) {
+    if (!is.null(ld_score)) {
+      aligned_ld <- .gsim_align_marker_numeric(
+        ld_score, marker_ids, "ld_score"
+      )
+      ld_all <- aligned_ld$value
+      ld_source <- list(
+        source = "explicit_input", alignment = aligned_ld$alignment
+      )
+    } else if (mode == "Glist") {
+      ld_all <- .gsim_glist_marker_metadata(
+        Glist, "ldscores", "rsidsLD", marker_ids, "ld_score"
+      )
+      ld_source <- list(
+        source = "Glist", alignment = "canonical_marker_order"
+      )
+    } else {
+      .gsim_stop(
+        "ld_score is required when b is nonzero outside Glist mode."
+      )
+    }
+  }
+
+  annotation_score_all <- NULL
+  annotation_score_source <- list(
+    source = "constant_one", alignment = "scalar"
+  )
+  if (variance_exponents[["c"]] != 0) {
+    if (is.null(annotation_score)) {
+      .gsim_stop("annotation_score is required when c is nonzero.")
+    }
+    aligned_score <- .gsim_align_marker_numeric(
+      annotation_score, marker_ids, "annotation_score"
+    )
+    annotation_score_all <- aligned_score$value
+    annotation_score_source <- list(
+      source = "explicit_input", alignment = aligned_score$alignment
+    )
+  }
+
+  multiplier <- .gsim_prepare_variance_model(
+    marker_multipliers = marker_multipliers,
+    marker_ids = marker_ids,
+    a = variance_exponents[["a"]],
+    b = variance_exponents[["b"]],
+    c = variance_exponents[["c"]],
+    maf = maf_all,
+    ld_score = ld_all,
+    annotation_score = annotation_score_all,
+    sources = list(
+      maf = maf_source,
+      ld_score = ld_source,
+      annotation_score = annotation_score_source
+    )
   )
   marker_multipliers <- multiplier$value
   if (architecture == "fixed" && !multiplier$settings$all_ones) {
     .gsim_stop(
       "non-unit marker_multipliers are not defined for architecture = 'fixed'."
     )
-  }
-  annotation <- .gsim_prepare_annotations(
-    A, marker_ids, n_annotations, annotation_types, annotation_prob
-  )
-  A <- annotation$A
-
-  maf_all <- if (!is.null(maf)) {
-    .gsim_as_named_vector(maf, marker_ids, "maf")
-  } else if (!is.null(W_full_raw)) {
-    stats::setNames(.gsim_maf_from_W(W_full_raw), marker_ids)
-  } else {
-    stats::setNames(rep(NA_real_, m_total), marker_ids)
   }
   block_id <- .gsim_as_named_vector(
     block_id, marker_ids, "block_id", numeric_only = FALSE

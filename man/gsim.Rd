@@ -26,6 +26,11 @@ gsim(
   rg = NULL,
   re = 0,
   maf = NULL,
+  a = 0,
+  b = 0,
+  c = 0,
+  ld_score = NULL,
+  annotation_score = NULL,
   maf_exponent = -0.5,
   block_id = NULL,
   n_hot_blocks = NULL,
@@ -87,15 +92,14 @@ mixture components. This is a Bernoulli model and cannot be combined with
 annotation-driven component probabilities.}
 
 \item{marker_multipliers}{Optional positive marker-specific relative
-active-effect variance weights, \eqn{w_j}. A supplied vector must have
-unique nonempty names exactly matching the simulation markers and is
-aligned once to canonical marker order. The multiplier is applied only to
-non-null effect draws, separately from component probabilities and the
-component multiplier. \code{NULL} gives unit multipliers. Values are not
-clipped or normalized. The aligned vector and compact provenance are
-returned. SBayesRV is one possible research motivation for supplying this
-generic fixed variance truth; \code{gsim()} does not implement SBayesRV
-inference. Non-unit multipliers are not defined for
+active-effect variance weights, \eqn{w_j}. A scalar is repeated; a
+marker-specific vector must have unique nonempty names exactly matching
+the simulation markers and is aligned once to canonical marker order.
+Direct multipliers cannot be combined with nonzero \code{a}, \code{b}, or \code{c}.
+The multiplier is applied only to non-null effect draws, separately from
+component probabilities and the component multiplier. \code{NULL} gives unit
+multipliers when the derived model is not requested. Values are not
+clipped or normalized. Non-unit multipliers are not defined for
 \code{architecture = "fixed"}, where \code{beta} supplies realized effects directly.}
 
 \item{n_causal}{Optional exact number of non-null markers. If supplied,
@@ -112,7 +116,24 @@ non-null probabilities.}
 \item{rg, re}{Genetic-effect and residual correlation matrices (or scalar
 off-diagonal correlations for multiple traits).}
 
-\item{maf}{Optional marker MAFs, named by marker ID or in marker order.}
+\item{maf}{Optional marker MAF. A scalar is repeated; a marker-specific
+vector must be named by marker ID. In Glist mode, \code{Glist$maf}, aligned
+through \code{Glist$rsids}, supplies MAF when \code{a} is nonzero and \code{maf} is NULL.}
+
+\item{a, b, c}{Finite scalar exponents in the marker-specific conditional
+effect-variance model
+\eqn{w_j=[p_j(1-p_j)]^a r_j^b s_j^c}. All default to zero. The model is
+requested when any exponent is nonzero.}
+
+\item{ld_score}{Optional marker LD score \eqn{r_j}. A scalar is repeated; a
+marker-specific vector must be named by marker ID. In Glist mode,
+\code{Glist$ldscores}, aligned through \code{Glist$rsidsLD}, is used when \code{b} is
+nonzero and \code{ld_score} is NULL. LD scores are not calculated or floored.}
+
+\item{annotation_score}{Optional single positive scalar annotation score
+\eqn{s_j} per marker. A scalar is repeated; a marker-specific vector must
+be named by marker ID. This controls conditional effect variance only and
+is never inferred from the SBayesRC \code{A} matrix.}
 
 \item{maf_exponent}{For \code{maf_dependent}, effect variance is proportional to
 \verb{[2p(1-p)]^maf_exponent} before realized-variance calibration.}
@@ -157,7 +178,8 @@ A list containing phenotypes, genetic values, residuals, exact marker
 effects and states, annotation truth, probability surfaces, the complete
 canonical \code{causal_probability} and \code{marker_multipliers} vectors, compact
 provenance under \code{settings$causal_probability} and
-\code{settings$marker_multipliers}, and optional summary statistics.
+\code{settings$marker_multipliers} (including the variance formula, exponents,
+metadata sources, and alignment), and optional summary statistics.
 }
 \description{
 \code{gsim()} simulates genomic data for validation and methodological studies. In

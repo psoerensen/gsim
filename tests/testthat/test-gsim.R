@@ -51,6 +51,15 @@ testthat::test_that("the default seeded component and effect draws are unchanged
     rg = 0.2, h2 = c(0.4, 0.6), seed = 90210,
     scale_effects = FALSE, return_genotypes = TRUE
   )
+  rng_default <- .Random.seed
+  explicit_zero <- gsim(
+    W = W, architecture = "bayesr", n_causal = 7L, nt = 2L,
+    rg = 0.2, h2 = c(0.4, 0.6), seed = 90210,
+    scale_effects = FALSE, return_genotypes = TRUE,
+    a = 0, b = 0, c = 0,
+    ld_score = "unused", annotation_score = "unused"
+  )
+  rng_zero <- .Random.seed
   expected <- matrix(c(
     -0.077974193640383160364, 0.038552830156511480597,
     -0.18304567539546776067, -0.054396810479884531719,
@@ -65,6 +74,263 @@ testthat::test_that("the default seeded component and effect draws are unchanged
     sim$causal_rsids, c("m2", "m3", "m6", "m9", "m10", "m23", "m24")
   )
   testthat::expect_equal(unname(sim$B_causal), expected, tolerance = 0)
+  for (field in c("component", "B", "B_causal", "G", "E", "Y",
+                  "causal_rsids", "causal_probability",
+                  "marker_multipliers")) {
+    testthat::expect_identical(sim[[field]], explicit_zero[[field]])
+  }
+  testthat::expect_identical(rng_default, rng_zero)
+  testthat::expect_identical(
+    sim$settings$marker_multipliers$variance_model, "constant"
+  )
+})
+
+testthat::test_that("derived variance weights follow the frozen formula", {
+  set.seed(106)
+  W <- matrix(rbinom(120 * 8, 2, 0.3), 120, 8)
+  colnames(W) <- paste0("m", seq_len(ncol(W)))
+  rownames(W) <- paste0("id", seq_len(nrow(W)))
+  p <- stats::setNames(seq(0.1, 0.45, length.out = 8), colnames(W))
+  r <- stats::setNames(seq(0.5, 4, length.out = 8), colnames(W))
+  s <- stats::setNames(seq(0.8, 2.2, length.out = 8), colnames(W))
+  common <- list(
+    W = W, architecture = "bayesr", causal_probability = 1,
+    seed = 31415, scale_effects = FALSE
+  )
+  unit <- do.call(gsim, common)
+  derived <- do.call(gsim, c(common, list(
+    maf = p[rev(names(p))], ld_score = r[rev(names(r))],
+    annotation_score = s[rev(names(s))], a = -0.4, b = -1, c = 0.5
+  )))
+  expected <- exp(
+    -0.4 * log(p * (1 - p)) - log(r) + 0.5 * log(s)
+  )
+
+  testthat::expect_equal(
+    derived$marker_multipliers, expected, tolerance = 1e-15
+  )
+  testthat::expect_identical(unit$component, derived$component)
+  testthat::expect_identical(
+    unit$marker_probabilities, derived$marker_probabilities
+  )
+  testthat::expect_equal(
+    derived$B,
+    sweep(unit$B, 1L, sqrt(expected), "*"),
+    tolerance = 1e-15
+  )
+  testthat::expect_identical(
+    derived$settings$marker_multipliers$exponents,
+    c(a = -0.4, b = -1, c = 0.5)
+  )
+  testthat::expect_identical(
+    derived$settings$marker_multipliers$variance_model, "derived"
+  )
+  testthat::expect_identical(
+    derived$settings$marker_multipliers$sources$maf$source,
+    "explicit_input"
+  )
+  testthat::expect_identical(
+    derived$settings$marker_multipliers$sources$ld_score$source,
+    "explicit_input"
+  )
+  testthat::expect_identical(
+    derived$settings$marker_multipliers$sources$annotation_score$source,
+    "explicit_input"
+  )
+  testthat::expect_equal(
+    derived$causal$variance_weight, unname(expected), tolerance = 1e-15
+  )
+  testthat::expect_true(all(derived$causal$causal_probability == 1))
+
+  maf_only <- do.call(gsim, c(common, list(maf = p, a = 0.25)))
+  ld_only <- do.call(gsim, c(common, list(ld_score = r, b = -0.5)))
+  annotation_only <- do.call(
+    gsim, c(common, list(annotation_score = s, c = 2))
+  )
+  testthat::expect_equal(
+    maf_only$marker_multipliers, (p * (1 - p))^0.25,
+    tolerance = 1e-15
+  )
+  testthat::expect_equal(
+    ld_only$marker_multipliers, r^-0.5, tolerance = 1e-15
+  )
+  testthat::expect_equal(
+    annotation_only$marker_multipliers, s^2, tolerance = 1e-15
+  )
+})
+
+testthat::test_that("derived variance inputs align and reject invalid models", {
+  W <- matrix(rep(0:2, length.out = 90 * 6), 90, 6)
+  colnames(W) <- paste0("marker", seq_len(ncol(W)))
+  rownames(W) <- paste0("id", seq_len(nrow(W)))
+  ids <- colnames(W)
+  p <- stats::setNames(seq(0.1, 0.4, length.out = 6), ids)
+  r <- stats::setNames(seq(1, 3, length.out = 6), ids)
+  s <- stats::setNames(seq(0.7, 1.7, length.out = 6), ids)
+  common <- list(
+    W = W, architecture = "bayesc", causal_probability = 1,
+    seed = 2718, scale_effects = FALSE
+  )
+  canonical <- do.call(gsim, c(common, list(
+    maf = p, ld_score = r, annotation_score = s, a = 0.2, b = -1, c = 1
+  )))
+  reordered <- do.call(gsim, c(common, list(
+    maf = rev(p), ld_score = rev(r), annotation_score = rev(s),
+    a = 0.2, b = -1, c = 1
+  )))
+  testthat::expect_identical(canonical$marker_multipliers,
+                             reordered$marker_multipliers)
+  testthat::expect_identical(canonical$B, reordered$B)
+
+  testthat::expect_error(
+    do.call(gsim, c(common, list(a = 1, marker_multipliers = p))),
+    "cannot be combined"
+  )
+  testthat::expect_error(
+    do.call(gsim, c(common, list(b = 1))), "ld_score is required"
+  )
+  testthat::expect_error(
+    do.call(gsim, c(common, list(c = 1))), "annotation_score is required"
+  )
+  testthat::expect_error(
+    do.call(gsim, c(common, list(maf = unname(p), a = 1))), "nonempty names"
+  )
+  bad_names <- p
+  names(bad_names)[1L] <- "unexpected"
+  testthat::expect_error(
+    do.call(gsim, c(common, list(maf = bad_names, a = 1))),
+    "missing: marker1.*unexpected: unexpected"
+  )
+  duplicated <- r
+  names(duplicated)[1L] <- names(duplicated)[2L]
+  testthat::expect_error(
+    do.call(gsim, c(common, list(ld_score = duplicated, b = 1))),
+    "duplicated: marker2"
+  )
+  for (bad in list(NA_real_, Inf, 0, -1)) {
+    invalid <- s
+    invalid[3L] <- bad
+    testthat::expect_error(
+      do.call(gsim, c(common, list(annotation_score = invalid, c = 1))),
+      "marker3"
+    )
+  }
+  invalid_maf <- p
+  invalid_maf[4L] <- 1
+  testthat::expect_error(
+    do.call(gsim, c(common, list(maf = invalid_maf, a = 1))), "marker4"
+  )
+  testthat::expect_error(
+    do.call(gsim, c(common, list(maf = p, a = 10000))),
+    "invalid markers"
+  )
+  testthat::expect_error(
+    do.call(gsim, c(common, list(a = c(1, 2)))), "finite numeric scalar"
+  )
+
+  scalar <- do.call(gsim, c(common, list(marker_multipliers = 2)))
+  testthat::expect_equal(scalar$marker_multipliers,
+                         stats::setNames(rep(2, 6), ids))
+})
+
+testthat::test_that("Glist metadata derives weights before causal-only loading", {
+  set.seed(107)
+  W_store <- matrix(rbinom(100 * 12, 2, 0.3), 100, 12)
+  colnames(W_store) <- paste0("m", seq_len(ncol(W_store)))
+  rownames(W_store) <- paste0("id", seq_len(nrow(W_store)))
+  maf <- stats::setNames(seq(0.08, 0.41, length.out = 12), colnames(W_store))
+  ld <- stats::setNames(seq(0.7, 3.45, length.out = 12), colnames(W_store))
+  Glist <- list(
+    ids = rownames(W_store),
+    rsids = list(`1` = colnames(W_store)[1:6],
+                 `2` = colnames(W_store)[7:12]),
+    rsidsLD = list(`2` = colnames(W_store)[7:12],
+                   `1` = colnames(W_store)[1:6]),
+    maf = list(unname(maf[1:6]), unname(maf[7:12])),
+    ldscores = list(ld[7:12], ld[1:6])
+  )
+  canonical_ids <- unname(unlist(Glist$rsidsLD, use.names = FALSE))
+  q <- stats::setNames(rep(c(1, 0, 0), length.out = 12), canonical_ids)
+  requested <- new.env(parent = emptyenv())
+  requested$rsids <- character(0)
+  fake_getG <- function(Glist, rsids, ids, chr = NULL,
+                        impute = TRUE, scale = FALSE) {
+    requested$rsids <- c(requested$rsids, rsids)
+    W_store[ids, rsids, drop = FALSE]
+  }
+  common <- list(
+    Glist = Glist, architecture = "bayesr", causal_probability = q,
+    a = -0.4, b = -1, seed = 1618, scale_effects = FALSE,
+    getG_fun = fake_getG
+  )
+  from_glist <- do.call(gsim, common)
+  requested_from_glist <- requested$rsids
+  requested$rsids <- character(0)
+  explicit <- do.call(gsim, c(common, list(
+    maf = maf[canonical_ids], ld_score = ld[canonical_ids]
+  )))
+  expected <- (maf[canonical_ids] * (1 - maf[canonical_ids]))^-0.4 *
+    ld[canonical_ids]^-1
+
+  testthat::expect_equal(from_glist$marker_multipliers, expected,
+                         tolerance = 1e-15)
+  testthat::expect_identical(from_glist$marker_multipliers,
+                             explicit$marker_multipliers)
+  testthat::expect_identical(from_glist$component, explicit$component)
+  testthat::expect_identical(from_glist$B, explicit$B)
+  testthat::expect_identical(from_glist$Y, explicit$Y)
+  testthat::expect_setequal(requested_from_glist, names(q)[q == 1])
+  testthat::expect_setequal(requested$rsids, names(q)[q == 1])
+  testthat::expect_length(requested_from_glist, sum(q))
+  testthat::expect_identical(
+    from_glist$settings$marker_multipliers$sources$maf$source, "Glist"
+  )
+  testthat::expect_identical(
+    from_glist$settings$marker_multipliers$sources$ld_score$source, "Glist"
+  )
+
+  missing_ld <- Glist
+  missing_ld$ldscores <- NULL
+  bad_common <- common
+  bad_common$Glist <- missing_ld
+  testthat::expect_error(
+    do.call(gsim, bad_common),
+    "Glist\\$ldscores"
+  )
+})
+
+testthat::test_that("scalar annotation variance remains distinct from SBayesRC", {
+  set.seed(108)
+  W <- matrix(rbinom(130 * 10, 2, 0.27), 130, 10)
+  colnames(W) <- paste0("m", seq_len(ncol(W)))
+  rownames(W) <- paste0("id", seq_len(nrow(W)))
+  A <- cbind(binary = rep(c(0, 1), each = 5),
+             continuous = seq(-1, 1, length.out = 10))
+  rownames(A) <- colnames(W)
+  alpha <- matrix(c(0.7, 0, 0, 0.2, 0, 0), nrow = 2L, byrow = TRUE)
+  score <- stats::setNames(seq(0.5, 1.4, length.out = 10), colnames(W))
+  common <- list(
+    W = W, A = A, architecture = "bayesr",
+    annotation_model = "sbayesrc", alpha = alpha, n_causal = 5L,
+    seed = 1414, scale_effects = FALSE
+  )
+  unit <- do.call(gsim, common)
+  weighted <- do.call(gsim, c(common, list(annotation_score = score, c = 1)))
+
+  testthat::expect_identical(unit$marker_probabilities,
+                             weighted$marker_probabilities)
+  testthat::expect_identical(unit$component, weighted$component)
+  active <- unit$component != 1L
+  testthat::expect_equal(
+    weighted$B[active, , drop = FALSE],
+    unit$B[active, , drop = FALSE] * sqrt(score[active]),
+    tolerance = 1e-15
+  )
+  testthat::expect_error(
+    do.call(gsim, c(common, list(c = 1))), "annotation_score is required"
+  )
+  testthat::expect_identical(weighted$A, unit$A)
+  testthat::expect_identical(weighted$alpha, unit$alpha)
 })
 
 testthat::test_that("mixed annotations produce valid SBayesRC probabilities", {
