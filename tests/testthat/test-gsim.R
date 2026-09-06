@@ -41,6 +41,32 @@ testthat::test_that("in-memory simulation is reproducible and internally exact",
   testthat::expect_lt(abs(x$vg_observed - 1), 1e-10)
 })
 
+testthat::test_that("the default seeded component and effect draws are unchanged", {
+  W <- matrix(
+    (seq_len(120 * 24) * 17L) %% 3L, 120, 24,
+    dimnames = list(paste0("id", 1:120), paste0("m", 1:24))
+  )
+  sim <- gsim(
+    W = W, architecture = "bayesr", n_causal = 7L, nt = 2L,
+    rg = 0.2, h2 = c(0.4, 0.6), seed = 90210,
+    scale_effects = FALSE, return_genotypes = TRUE
+  )
+  expected <- matrix(c(
+    -0.077974193640383160364, 0.038552830156511480597,
+    -0.18304567539546776067, -0.054396810479884531719,
+    -0.013787213342484894163, 0.28964250823060849749,
+    0.056612880563344243623, 0.013425355401567792835,
+    -0.034777784856836461980, -0.085832263786816700990,
+    0.00015569042568410165132, -0.079326625829301181114,
+    0.062282996563945917934, 0.21700905951862298204
+  ), nrow = 7L)
+
+  testthat::expect_identical(
+    sim$causal_rsids, c("m2", "m3", "m6", "m9", "m10", "m23", "m24")
+  )
+  testthat::expect_equal(unname(sim$B_causal), expected, tolerance = 0)
+})
+
 testthat::test_that("mixed annotations produce valid SBayesRC probabilities", {
   set.seed(22)
   W <- matrix(rbinom(500 * 100, 2, 0.25), 500, 100)
@@ -231,6 +257,146 @@ testthat::test_that("membership and variance truth remain independent", {
   )
   testthat::expect_identical(
     combined$settings$marker_multipliers$policy, "supplied"
+  )
+})
+
+testthat::test_that("direct causal probabilities and variance weights are independent", {
+  set.seed(105)
+  W_store <- matrix(rbinom(90 * 12, 2, 0.3), 90, 12)
+  colnames(W_store) <- paste0("m", seq_len(ncol(W_store)))
+  rownames(W_store) <- paste0("id", seq_len(nrow(W_store)))
+  Glist <- list(
+    ids = rownames(W_store),
+    rsids = list(`2` = colnames(W_store)[7:12],
+                 `1` = colnames(W_store)[1:6])
+  )
+  q <- stats::setNames(
+    c(0, 1, 0, 1, 1, 0, 0, 1, 0, 0, 1, 0), colnames(W_store)
+  )
+  w <- stats::setNames(
+    exp(seq(-0.6, 0.6, length.out = ncol(W_store))), colnames(W_store)
+  )
+  requested <- new.env(parent = emptyenv())
+  requested$rsids <- character(0)
+  fake_getG <- function(Glist, rsids, ids, chr = NULL,
+                        impute = TRUE, scale = FALSE) {
+    requested$rsids <- c(requested$rsids, rsids)
+    W_store[ids, rsids, drop = FALSE]
+  }
+  common <- list(
+    Glist = Glist, architecture = "bayesr", seed = 24601,
+    causal_probability = q[rev(names(q))], getG_fun = fake_getG,
+    scale_effects = FALSE, return_genotypes = TRUE
+  )
+
+  unit <- do.call(gsim, common)
+  rng_unit <- .Random.seed
+  requested_unit <- requested$rsids
+  requested$rsids <- character(0)
+  weighted <- do.call(gsim, c(common, list(
+    marker_multipliers = w[rev(names(w))]
+  )))
+  rng_weighted <- .Random.seed
+
+  canonical_ids <- unname(unlist(Glist$rsids, use.names = FALSE))
+  q_canonical <- q[canonical_ids]
+  w_canonical <- w[canonical_ids]
+  active <- q_canonical == 1
+  expected_probability <- cbind(
+    1 - q_canonical,
+    q_canonical * 0.8,
+    q_canonical * 0.18,
+    q_canonical * 0.02
+  )
+  dimnames(expected_probability) <- dimnames(weighted$marker_probabilities)
+  testthat::expect_equal(
+    weighted$marker_probabilities, expected_probability, tolerance = 1e-15
+  )
+  testthat::expect_identical(weighted$causal_probability, q_canonical)
+  testthat::expect_identical(
+    weighted$causal_rsids, names(q_canonical)[active]
+  )
+  testthat::expect_setequal(requested_unit, names(q_canonical)[active])
+  testthat::expect_setequal(requested$rsids, names(q_canonical)[active])
+  testthat::expect_length(requested_unit, sum(active))
+  testthat::expect_length(requested$rsids, sum(active))
+  testthat::expect_identical(unit$component, weighted$component)
+  testthat::expect_equal(
+    weighted$B[active, , drop = FALSE],
+    sweep(unit$B[active, , drop = FALSE], 1L,
+          sqrt(w_canonical[active]), "*"),
+    tolerance = 1e-15
+  )
+  testthat::expect_true(all(weighted$B[!active, , drop = FALSE] == 0))
+  testthat::expect_identical(rng_unit, rng_weighted)
+  testthat::expect_identical(
+    weighted$settings$causal_probability$policy, "supplied_bernoulli"
+  )
+  testthat::expect_equal(
+    weighted$settings$causal_probability$expected_n_causal, sum(q)
+  )
+  testthat::expect_identical(
+    weighted$causal$causal_probability, unname(q_canonical[active])
+  )
+  testthat::expect_identical(
+    weighted$causal$variance_weight, unname(w_canonical[active])
+  )
+
+  all_causal <- gsim(
+    W = W_store, architecture = "bayesc", causal_probability = 1,
+    seed = 24602, scale_effects = FALSE
+  )
+  testthat::expect_true(all(all_causal$component == 2L))
+  testthat::expect_true(all(all_causal$causal_probability == 1))
+  testthat::expect_identical(
+    all_causal$settings$causal_probability$policy, "supplied_bernoulli"
+  )
+})
+
+testthat::test_that("direct causal probabilities reject ambiguous models", {
+  W <- matrix(rep(0:2, length.out = 80 * 8), 80, 8)
+  colnames(W) <- paste0("m", seq_len(ncol(W)))
+  rownames(W) <- paste0("id", seq_len(nrow(W)))
+  q <- stats::setNames(rep(0.5, ncol(W)), colnames(W))
+  bad_duplicate <- bad_name <- q
+  names(bad_duplicate)[1L] <- names(bad_duplicate)[2L]
+  names(bad_name)[1L] <- "unknown"
+  invalid <- list(
+    unname(q), q[-1L], bad_duplicate, bad_name,
+    replace(q, 1L, NA_real_), replace(q, 1L, -0.1),
+    replace(q, 1L, 1.1), replace(q, seq_along(q), 0)
+  )
+  for (value in invalid) {
+    testthat::expect_error(
+      gsim(W = W, architecture = "bayesc", causal_probability = value,
+           seed = 11),
+      "causal_probability"
+    )
+  }
+
+  testthat::expect_error(
+    gsim(W = W, causal_probability = q, n_causal = 3L, seed = 11),
+    "n_causal"
+  )
+  testthat::expect_error(
+    gsim(W = W, architecture = "fixed", causal_probability = q,
+         beta = rep(1, ncol(W)), seed = 11),
+    "fixed"
+  )
+  testthat::expect_error(
+    gsim(W = W, architecture = "clustered", causal_probability = q,
+         block_id = rep(1:2, each = 4), seed = 11),
+    "clustered"
+  )
+  testthat::expect_error(
+    gsim(W = W, causal_probability = q,
+         annotation_model = "sbayesrc", seed = 11),
+    "sbayesrc"
+  )
+  testthat::expect_error(
+    gsim(W = W, architecture = "bayesc", causal_probability = q,
+         pi = c(1, 0), seed = 11),
+    "positive mass"
   )
 })
 

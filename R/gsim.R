@@ -24,8 +24,16 @@
 #' @param pi Mixture probabilities, with the null component first.
 #' @param mixture_variances Relative mixture-component variances, with zero
 #'   first.
+#' @param causal_probability Optional scalar or marker-specific probability
+#'   \eqn{q_j} that marker \eqn{j} is non-null. A marker-specific vector must
+#'   have unique nonempty names exactly matching the simulation markers. When
+#'   supplied, these probabilities replace the null mass implied by `pi`, while
+#'   `pi[-1] / sum(pi[-1])` retains the conditional probabilities of the active
+#'   mixture components. This is a Bernoulli model and cannot be combined with
+#'   `n_causal`, `architecture = "fixed"`, `architecture = "clustered"`, or
+#'   annotation-driven component probabilities.
 #' @param marker_multipliers Optional positive marker-specific relative
-#'   active-effect variance multipliers, \eqn{q_j}. A supplied vector must have
+#'   active-effect variance weights, \eqn{w_j}. A supplied vector must have
 #'   unique nonempty names exactly matching the simulation markers and is
 #'   aligned once to canonical marker order. The multiplier is applied only to
 #'   non-null effect draws, separately from component probabilities and the
@@ -69,7 +77,8 @@
 #'
 #' @return A list containing phenotypes, genetic values, residuals, exact marker
 #'   effects and states, annotation truth, probability surfaces, the complete
-#'   canonical `marker_multipliers` vector, compact multiplier provenance under
+#'   canonical `causal_probability` and `marker_multipliers` vectors, compact
+#'   provenance under `settings$causal_probability` and
 #'   `settings$marker_multipliers`, and optional summary statistics.
 #' @export
 gsim <- function(
@@ -85,6 +94,7 @@ gsim <- function(
   vg = 1,
   pi = NULL,
   mixture_variances = NULL,
+  causal_probability = NULL,
   marker_multipliers = NULL,
   n_causal = NULL,
   beta = NULL,
@@ -191,6 +201,32 @@ gsim <- function(
   }
 
   m_total <- length(marker_ids)
+  causal_spec <- .gsim_prepare_causal_probability(
+    causal_probability, marker_ids
+  )
+  if (causal_spec$settings$supplied) {
+    if (!is.null(n_causal)) {
+      .gsim_stop("causal_probability cannot be combined with n_causal.")
+    }
+    if (architecture == "fixed") {
+      .gsim_stop(
+        "causal_probability is not defined for architecture = 'fixed'."
+      )
+    }
+    if (architecture == "clustered") {
+      .gsim_stop(
+        "causal_probability cannot be combined with architecture = 'clustered'."
+      )
+    }
+    if (annotation_model != "none" || !is.null(alpha)) {
+      .gsim_stop(
+        paste(
+          "causal_probability cannot be combined with alpha or",
+          "annotation_model = 'sbayesrc'."
+        )
+      )
+    }
+  }
   multiplier <- .gsim_prepare_marker_multipliers(
     marker_multipliers, marker_ids
   )
@@ -265,6 +301,14 @@ gsim <- function(
     rownames(probability) <- marker_ids
     rownames(continuation) <- marker_ids
 
+    if (causal_spec$settings$supplied) {
+      direct <- .gsim_apply_causal_probability(
+        probability, causal_spec$value, stick_order
+      )
+      probability <- direct$probability
+      continuation <- direct$continuation
+    }
+
     if (architecture == "clustered") {
       clustered <- .gsim_apply_cluster_weights(
         probability, block_id, n_hot_blocks, cluster_enrichment
@@ -283,6 +327,17 @@ gsim <- function(
     }
     B <- NULL
   }
+
+  causal_probability_used <- if (architecture == "fixed") {
+    stats::setNames(as.numeric(component != 1L), marker_ids)
+  } else {
+    stats::setNames(1 - probability[, 1L], marker_ids)
+  }
+  causal_probability_settings <- .gsim_causal_probability_settings(
+    causal_probability_used,
+    if (architecture == "fixed") "fixed_beta" else
+      causal_spec$settings$policy
+  )
 
   causal_idx <- which(component != 1L)
   if (!length(causal_idx)) {
@@ -365,6 +420,8 @@ gsim <- function(
   causal_table <- data.frame(
     rsid = causal_ids,
     component = component[causal_idx],
+    causal_probability = unname(causal_probability_used[causal_ids]),
+    variance_weight = unname(marker_multipliers[causal_ids]),
     maf = unname(maf_all[causal_ids]),
     stringsAsFactors = FALSE
   )
@@ -385,6 +442,7 @@ gsim <- function(
     alpha = alpha,
     pi = pi,
     mixture_variances = mixture_variances,
+    causal_probability = causal_probability_used,
     marker_multipliers = marker_multipliers,
     marker_probabilities = if (return_marker_probabilities) probability else NULL,
     continuation_probabilities = if (return_marker_probabilities) continuation else NULL,
@@ -416,6 +474,7 @@ gsim <- function(
       standardize_W = standardize_W,
       scale_effects = scale_effects,
       effect_scale = effect_scale,
+      causal_probability = causal_probability_settings,
       marker_multipliers = multiplier$settings,
       chunk_size = chunk_size,
       compute_sumstats = compute_sumstats

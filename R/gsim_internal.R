@@ -46,6 +46,95 @@
   x
 }
 
+.gsim_prepare_causal_probability <- function(causal_probability, marker_ids) {
+  if (is.null(causal_probability)) {
+    return(list(
+      value = NULL,
+      settings = list(supplied = FALSE, policy = "architecture")
+    ))
+  }
+  if (!is.numeric(causal_probability) || !is.null(dim(causal_probability)) ||
+      !length(causal_probability)) {
+    .gsim_stop(
+      "causal_probability must be a numeric scalar or marker-specific vector."
+    )
+  }
+
+  if (length(causal_probability) == 1L) {
+    value <- rep.int(as.numeric(causal_probability), length(marker_ids))
+    alignment <- "scalar"
+  } else {
+    if (length(causal_probability) != length(marker_ids)) {
+      .gsim_stop(
+        "causal_probability must be scalar or have one value per marker."
+      )
+    }
+    marker_names <- names(causal_probability)
+    if (is.null(marker_names) || anyNA(marker_names) ||
+        any(!nzchar(marker_names))) {
+      .gsim_stop(
+        "marker-specific causal_probability must have nonempty marker names."
+      )
+    }
+    if (anyDuplicated(marker_names)) {
+      .gsim_stop("causal_probability marker names must be unique.")
+    }
+    if (!setequal(marker_names, marker_ids)) {
+      .gsim_stop(
+        "causal_probability names must exactly match the simulation markers."
+      )
+    }
+    value <- as.numeric(causal_probability[match(marker_ids, marker_names)])
+    alignment <- "canonical_marker_order"
+  }
+  names(value) <- marker_ids
+  if (any(!is.finite(value)) || any(value < 0 | value > 1)) {
+    .gsim_stop("causal_probability values must be finite and lie in [0, 1].")
+  }
+  if (!any(value > 0)) {
+    .gsim_stop("causal_probability must give at least one marker positive mass.")
+  }
+
+  list(
+    value = value,
+    settings = list(
+      supplied = TRUE,
+      policy = "supplied_bernoulli",
+      alignment = alignment
+    )
+  )
+}
+
+.gsim_apply_causal_probability <- function(probability, causal_probability,
+                                            stick_order) {
+  active_mass <- rowSums(probability[, -1L, drop = FALSE])
+  if (any(!is.finite(active_mass) | active_mass <= 0)) {
+    .gsim_stop("pi must assign positive mass to at least one active component.")
+  }
+  active_conditional <- probability[, -1L, drop = FALSE] / active_mass
+  probability[, 1L] <- 1 - causal_probability
+  probability[, -1L] <- active_conditional * causal_probability
+  rownames(probability) <- names(causal_probability)
+  list(
+    probability = probability,
+    continuation = .gsim_probability_to_continuation(
+      probability, stick_order
+    )
+  )
+}
+
+.gsim_causal_probability_settings <- function(value, policy) {
+  list(
+    policy = policy,
+    alignment = "canonical_marker_order",
+    n_markers = length(value),
+    minimum = min(value),
+    maximum = max(value),
+    mean = mean(value),
+    expected_n_causal = sum(value)
+  )
+}
+
 .gsim_prepare_marker_multipliers <- function(marker_multipliers, marker_ids) {
   supplied <- !is.null(marker_multipliers)
   if (!supplied) {

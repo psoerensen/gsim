@@ -7,9 +7,10 @@ matrix, or read from an optional `qgg::Glist` when `qgg` is installed.
 
 The simulator supports BayesC, BayesR, major-plus-polygenic, MAF-dependent,
 clustered, and fixed-effect architectures. It can simulate one or multiple
-traits, annotation-informed component probabilities, and marker-specific
-active-effect variance multipliers. Optional marginal summary statistics can be
-generated from the same simulated phenotype.
+traits, annotation-informed component probabilities, direct marker-specific
+causal probabilities, and marker-specific active-effect variance weights.
+Optional marginal summary statistics can be generated from the same simulated
+phenotype.
 
 Returned objects include phenotype, genetic and residual components, exact
 marker effects and states, causal markers, probability surfaces, targets,
@@ -54,6 +55,20 @@ Simulate from a caller-provided genotype matrix:
 W <- matrix(rbinom(150 * 100, size = 2, prob = 0.3), 150, 100)
 colnames(W) <- paste0("m", seq_len(ncol(W)))
 sim <- gsim(W = W, architecture = "bayesr", n_causal = 10, seed = 2)
+```
+
+Membership and active-effect variance can be specified independently. A direct
+probability is a Bernoulli non-null probability; a multiplier is a relative
+active-effect variance weight:
+
+```r
+marker_ids <- colnames(W)
+q <- setNames(seq(0.02, 0.20, length.out = length(marker_ids)), marker_ids)
+w <- setNames(exp(seq(-0.5, 0.5, length.out = length(marker_ids))), marker_ids)
+sim <- gsim(
+  W = W, architecture = "bayesr",
+  causal_probability = q, marker_multipliers = w, seed = 3
+)
 ```
 
 Real `qgg::Glist` inputs are supported when `qgg` is installed. Scientific

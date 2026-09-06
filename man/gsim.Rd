@@ -17,6 +17,7 @@ gsim(
   vg = 1,
   pi = NULL,
   mixture_variances = NULL,
+  causal_probability = NULL,
   marker_multipliers = NULL,
   n_causal = NULL,
   beta = NULL,
@@ -76,8 +77,17 @@ realized variances when \code{scale_effects = TRUE}.}
 \item{mixture_variances}{Relative mixture-component variances, with zero
 first.}
 
+\item{causal_probability}{Optional scalar or marker-specific probability
+\eqn{q_j} that marker \eqn{j} is non-null. A marker-specific vector must
+have unique nonempty names exactly matching the simulation markers. When
+supplied, these probabilities replace the null mass implied by \code{pi}, while
+\code{pi[-1] / sum(pi[-1])} retains the conditional probabilities of the active
+mixture components. This is a Bernoulli model and cannot be combined with
+\code{n_causal}, \code{architecture = "fixed"}, \code{architecture = "clustered"}, or
+annotation-driven component probabilities.}
+
 \item{marker_multipliers}{Optional positive marker-specific relative
-active-effect variance multipliers, \eqn{q_j}. A supplied vector must have
+active-effect variance weights, \eqn{w_j}. A supplied vector must have
 unique nonempty names exactly matching the simulation markers and is
 aligned once to canonical marker order. The multiplier is applied only to
 non-null effect draws, separately from component probabilities and the
@@ -145,7 +155,8 @@ in chunks for this optional step.}
 \value{
 A list containing phenotypes, genetic values, residuals, exact marker
 effects and states, annotation truth, probability surfaces, the complete
-canonical \code{marker_multipliers} vector, compact multiplier provenance under
+canonical \code{causal_probability} and \code{marker_multipliers} vectors, compact
+provenance under \code{settings$causal_probability} and
 \code{settings$marker_multipliers}, and optional summary statistics.
 }
 \description{
