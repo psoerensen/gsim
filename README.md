@@ -135,6 +135,39 @@ See [the direct 1000 Genomes chromosome 22 example](inst/examples/1000G_chr22.R)
 for an internet-enabled GRCh37 workflow using the official approximately
 196 MB IGSR VCF directly, without bcftools or htslib.
 
+## Genotypes to phenotypes
+
+Packed simulation output can enter the existing phenotype engine without a new
+adapter:
+
+```r
+reference <- gsim_reference("reference")
+base <- gsim_simulate_founders(reference, ..., output = "base")
+pedigree_bed <- gsim_simulate_pedigree(
+  base, pedigree, seed = 2, output = "pedigree", format = "bed"
+)
+Glist <- qgg::gprep(
+  study = "simulation",
+  bedfiles = pedigree_bed$paths[["bed"]],
+  bimfiles = pedigree_bed$paths[["bim"]],
+  famfiles = pedigree_bed$paths[["fam"]]
+)
+phenotype <- gsim(Glist = Glist, n_causal = 20, seed = 3)
+```
+
+BED dosage is H1 + H2, BIM order becomes `Glist$rsids`, FAM order becomes
+`Glist$ids`, and `gprep()` supplies `Glist$maf`. LD scores must be prepared by
+the established Glist workflow or supplied as a complete named vector. During
+phenotype simulation, gsim selects causal markers first and requests only those
+columns from `qgg::getG()` unless summary statistics are requested.
+
+The three marker-level controls are distinct: `q_j` is causal probability,
+active `pi_k` values are conditional mixture proportions, and `w_j` is the
+conditional effect-variance multiplier. See the
+[complete local-data example](inst/examples/end_to_end_phenotype.R) and the
+[qualification contract](docs/qualification/genotypes_to_phenotypes.md) for the
+default, causal-probability, variance-weight, and combined configurations.
+
 ## Pedigree and record workloads
 
 `gsim_pedigree()` creates scalable multigenerational pedigree domains with
