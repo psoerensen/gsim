@@ -34,3 +34,11 @@ never edit generated Rd by hand.
 ## Rules
 
 Preserve unrelated worktree changes. Keep seeded behavior reproducible and update generated R documentation only through the repository's documented workflow. Benchmarks and broad qualification runs require authorization. Never commit generated build, installation, cache, log, or check artifacts.
+
+## Website
+
+Follow [website/README.md](website/README.md). Build with
+`python website/build.py`; render only into ignored `website/_site/`, never
+into `docs/`. Scientific Markdown and public Rd remain authoritative. Website
+builds must not load gsim, execute examples or benchmarks, install dependencies,
+or require private repositories. Deployment stays manual-only until authorized.

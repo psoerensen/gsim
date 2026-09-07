@@ -1,0 +1,5 @@
+/* Keep long API signatures and historical result tables inside the page. */
+pre { overflow-x: auto; }
+main table { display: block; overflow-x: auto; max-width: 100%; }
+main td { vertical-align: top; }
+.source-note { color: var(--bs-secondary-color); font-size: .9rem; }

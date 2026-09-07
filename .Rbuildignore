@@ -1,2 +1,4 @@
 ^gsim\.Rproj$
 ^\.Rproj\.user$
+^website$
+^\.github$

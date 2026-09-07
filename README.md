@@ -11,7 +11,9 @@ matrix, or a `qgg::Glist`. qgg is optional generally and required for the
 currently supported Glist workflow.
 
 See the [documentation index](docs/README.md) for scientific contracts, public
-API references, complete examples, and qualification evidence.
+API references, complete examples, and qualification evidence. The
+[website build guide](website/README.md) explains local preview and the prepared
+manual GitHub Pages workflow.
 
 The simulator supports BayesC, BayesR, major-plus-polygenic, MAF-dependent,
 clustered, and fixed-effect architectures. It can simulate one or multiple

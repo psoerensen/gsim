@@ -1,0 +1,11 @@
+/_site/
+/.quarto/
+/_freeze/
+/*.qmd
+/contracts/
+/evidence/
+/reference/
+/files/
+/.cache/
+/*_files/
+/.preview/

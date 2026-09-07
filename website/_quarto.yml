@@ -1,0 +1,56 @@
+project:
+  type: website
+  output-dir: _site
+  render:
+    - "*.qmd"
+    - "contracts/*.qmd"
+    - "evidence/*.qmd"
+    - "reference/*.qmd"
+  resources:
+    - files/**
+
+execute:
+  eval: false
+  freeze: false
+  echo: true
+  warning: false
+  message: false
+
+website:
+  title: gsim
+  site-url: https://psoerensen.github.io/gsim/
+  repo-url: https://github.com/psoerensen/gsim
+  navbar:
+    left:
+      - text: Home
+        href: index.qmd
+      - text: Getting started
+        href: getting-started.qmd
+      - text: Function reference
+        href: reference/index.qmd
+      - text: Examples
+        href: examples.qmd
+      - text: Scientific contracts
+        href: contracts.qmd
+      - text: Validation and performance
+        href: validation.qmd
+    right:
+      - text: GitHub
+        href: https://github.com/psoerensen/gsim
+  page-footer:
+    left: "gsim · GPL-3"
+    right:
+      - text: Attribution and notices
+        href: attribution.qmd
+
+format:
+  html:
+    theme: flatly
+    html-math-method: mathjax
+    toc: true
+    toc-depth: 3
+    number-sections: false
+    code-fold: false
+    code-tools: false
+    highlight-style: github
+    css: styles.css

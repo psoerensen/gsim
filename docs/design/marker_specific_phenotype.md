@@ -34,10 +34,11 @@ Let marker `j` have component `Z_j`, where component 1 is null and components
 component probabilities and let `q_j` be the supplied causal probability. With
 `causal_probability` supplied,
 
-```text
-Pr(Z_j = 1) = 1 - q_j
-Pr(Z_j = k) = q_j * pi_k / sum(pi_2,...,pi_K),  k = 2,...,K.
-```
+$$
+\Pr(Z_j = 1) = 1 - q_j, \qquad
+\Pr(Z_j = k) = q_j \frac{\pi_k}{\sum_{\ell=2}^{K}\pi_\ell},
+\quad k = 2,\ldots,K.
+$$
 
 Thus `q_j` is a genuine Bernoulli non-null probability, not a relative sampling
 weight and not an exact causal count. Each marker retains the active-component
@@ -62,10 +63,10 @@ Let `v_k` be the relative variance of active component `k`, `w_j` be the
 positive finite `marker_multipliers` value for marker `j`, and `R_g` be the
 trait-effect correlation matrix. Before optional realized-variance calibration,
 
-```text
-Cov(beta_j | Z_j = k) = v_k * w_j * R_g,  k > 1,
-beta_j = 0,                                      k = 1.
-```
+$$
+\operatorname{Cov}(\beta_j \mid Z_j = k) = v_k w_j R_g, \quad k > 1,
+\qquad \beta_j = 0 \text{ when } k = 1.
+$$
 
 The `w_j` values are not clipped or normalized. They affect neither causal
 membership nor the conditional active-component probabilities. Under the
