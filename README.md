@@ -247,3 +247,15 @@ paths.
 HAPNEST scientific attribution and gbits/gmat component provenance are retained
 in the [packed workflow guide](docs/design/packed_chromosome_simulation.md) and
 the applicable [copyright and license notices](inst/COPYRIGHTS).
+
+## Controlled gene sets
+
+`gsim_gene_sets()` constructs gene sets conditional on known causal SNP IDs,
+usually `simulation$causal_rsids`, and a supplied SNP?gene mapping. Paired total
+and causal gene counts define scenarios; replicates reuse the pools, allowing
+natural overlap and zero-causal controls. It returns exact composition truth,
+not enrichment calls, and never modifies SNP effects. Genes without mapped SNPs
+are outside the initial interface. See the
+[scientific contract](docs/design/gene_sets.md) and the
+[short runnable example](inst/examples/gene_sets.R), which uses only synthetic
+local inputs. Substitute your own two-column `snp`/`gene` mapping for real data.

@@ -1,4 +1,4 @@
-Both complete scripts are available below. Website builds display code only;
+The complete scripts are available below. Website builds display code only;
 they never run these scripts or download biological inputs.
 
 ## Local end-to-end workflow
@@ -46,3 +46,14 @@ See [Getting started](getting-started.qmd) for the stage-by-stage workflow
 sketches and [Validation and performance](validation.qmd) for the retained
 scientific evidence, benchmark environments, and uncertainty. External HAPNEST
 comparison remains deferred; pedigree meiosis remains single-threaded.
+
+## Controlled gene sets
+
+Run `source("inst/examples/gene_sets.R")` from the repository root with gsim
+installed. The example obtains causal SNPs from a small existing simulation,
+uses an explicitly synthetic mapping, and prints exact set composition and
+shared genes. Sets are deliberately conditional on causal truth.
+
+[Download gene_sets.R](files/gene_sets.R). See the
+[authoritative contract](contracts/gene_sets.qmd) for input, sampling and truth
+semantics and instructions for substituting a real mapping.

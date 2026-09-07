@@ -19,11 +19,14 @@ the versions, fixtures, and limits of their original measurements.
   causal probabilities, conditional mixture proportions, variance weights,
   metadata alignment, and returned truth.
 
+- [Controlled gene sets](design/gene_sets.md): supplied SNP?gene mappings,
+  exact causal composition, null controls, replicates, overlap and RNG semantics.
+
 The installed R help is authoritative for public arguments and return values:
 [reference](../man/gsim_reference.Rd), [VCF import](../man/gsim_import_vcf.Rd),
 [founders](../man/gsim_simulate_founders.Rd),
 [pedigree simulation](../man/gsim_simulate_pedigree.Rd),
-[phenotypes](../man/gsim.Rd), [printing](../man/print.gsim.Rd),
+[phenotypes](../man/gsim.Rd), [gene sets](../man/gsim_gene_sets.Rd), [printing](../man/print.gsim.Rd),
 [pedigree domains](../man/gsim_pedigree.Rd), and
 [record workloads](../man/gsim_pedigree_records.Rd).
 
@@ -38,6 +41,8 @@ covariance. Genotype-based phenotype simulation is a separate workflow.
 - [End-to-end phenotypes](../inst/examples/end_to_end_phenotype.R) constructs a
   small synthetic local fixture. Run after `library(gsim)` with qgg installed;
   its illustrative LD scores are not estimates from real 1000G data.
+- [Controlled gene sets](../inst/examples/gene_sets.R) uses existing simulated
+  causal SNP truth and an explicitly synthetic SNP?gene mapping; no downloads.
 - [Repository instructions](../AGENTS.md) describe installation, explicitly
   loading an isolated installed package for focused tests, and generated Rd.
 - [Copyrights and provenance](../inst/COPYRIGHTS) retain HAPNEST attribution

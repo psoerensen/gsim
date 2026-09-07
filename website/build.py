@@ -111,12 +111,12 @@ def prepare():
         if not (SITE / "reference" / f"{topic}.qmd").is_file():
             raise ValueError(f"Missing public reference: {topic}")
     page("reference/index.qmd", "Function reference",
-         "Generated from public Rd without loading gsim. All seven exported functions "
+         "Generated from public Rd without loading gsim. All exported functions "
          "and the registered print method are listed.\n\n" +
          "\n".join(f"- [`{name}()`]({name}.qmd)" for name in topics))
     files = SITE / "files"
     files.mkdir(exist_ok=True)
-    for name in ("1000G_chr22.R", "end_to_end_phenotype.R"):
+    for name in ("1000G_chr22.R", "end_to_end_phenotype.R", "gene_sets.R"):
         shutil.copyfile(ROOT / "inst/examples" / name, files / name)
     shutil.copyfile(ROOT / "inst/COPYRIGHTS", files / "COPYRIGHTS.txt")
     page("attribution.qmd", "Attribution and license notices",

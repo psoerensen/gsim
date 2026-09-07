@@ -2,6 +2,7 @@
 
 S3method(print,gsim)
 export(gsim)
+export(gsim_gene_sets)
 export(gsim_import_vcf)
 export(gsim_pedigree)
 export(gsim_pedigree_records)

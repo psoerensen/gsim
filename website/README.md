@@ -54,10 +54,10 @@ No user settings or global environment variables are changed.
 | --- | --- |
 | Home | README introduction, installation, and first small deterministic example |
 | Getting started | README packed-reference, phenotype handoff, and pedigree-record sections |
-| Function reference | All seven NAMESPACE exports plus the print S3 method, from public man/*.Rd |
+| Function reference | All NAMESPACE exports plus the print S3 method, from public man/*.Rd |
 | Examples | website/examples.md for running instructions; unchanged inst/examples scripts copied byte-for-byte as downloads |
-| Scientific contracts | docs/README.md index and all five docs/design Markdown contracts |
-| Validation and performance | docs/README.md evidence index and all seven docs/qualification reports |
+| Scientific contracts | docs/README.md index and all docs/design Markdown contracts |
+| Validation and performance | docs/README.md evidence index and all docs/qualification reports |
 | Attribution | Unmodified inst/COPYRIGHTS, also available as a text download |
 
 Do not edit generated QMD or HTML. Edit the public Markdown authority or the
