@@ -1,6 +1,6 @@
 # Streaming phased VCF import contract
 
-This document freezes the bounded import contract implemented in `gsim` 0.10.0.
+This document specifies the supported bounded VCF import contract in `gsim`.
 The production reader is private native C++ compiled into `gsim`; it does not
 invoke bcftools or link to a separately installed htslib, gbits, or gmat.
 
@@ -17,7 +17,7 @@ order. An explicit unique vector is matched exactly and establishes output
 FAM/bit order, including noncontiguous and reordered selection. Only those
 sample fields are parsed. `chromosome` uses exact label identity. `region` is
 an inclusive pair of positive integer base-pair coordinates and requires one
-selected chromosome. The initial reader scans sequentially and is not an
+selected chromosome. The reader scans sequentially and is not an
 indexed-access implementation.
 
 Records outside the selected chromosome or region are counted before genotype

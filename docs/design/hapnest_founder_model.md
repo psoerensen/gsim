@@ -17,6 +17,11 @@ The HAPNEST source is the executable scientific oracle when the paper and code
 differ.  In particular, the paper's Figure 1 uses a non-strict mutation-age
 inequality, whereas the implementation uses strict `T < mutation_age`.
 
+The H1/H2 byte-matrix interface described below is an internal bounded oracle.
+The public `gsim_simulate_founders()` route reads packed HAP/BIM/FAM and uses
+the same event model without materializing those matrices; its input alignment
+and storage contract is in the [packed workflow guide](packed_chromosome_simulation.md).
+
 ## Inputs, meanings, and units
 
 - The reference is a pair of variant-aligned `H1` and `H2` matrices with donor
@@ -105,7 +110,7 @@ diploid counts are the exact elementwise sum `h1 + h2`, as in
 and the paper's Figure 1c.
 
 The native argument `donor_phase` defaults to `"hapnest"`, and that is the only
-mode implemented in this milestone.  A pooled union of H1/H2 haplotypes would
+supported mode.  A pooled union of H1/H2 haplotypes would
 be a distinct extension, not HAPNEST compatibility; `donor_phase = "pooled"`
 is rejected rather than silently substituted.
 
@@ -170,7 +175,9 @@ HAP/BIM/FAM chromosome order and reader batching do not enter the stream key;
 only the exact selected chromosome label does. Loaded H1/H2 donor handles are
 materialized phase-specifically through the private gsim filtered-copy
 primitive without byte-matrix or genotype decoding. See
-`hap_reference_founders.md` for its alignment and lifetime contract.
+[the packed workflow guide](packed_chromosome_simulation.md#dataset-alignment-and-representations)
+for alignment, and its [ownership contract](packed_chromosome_simulation.md#ownership-and-lifetime)
+for handle lifetime.
 
 ## Validation and ownership
 
@@ -200,13 +207,14 @@ BED/BIM/FAM without changing this byte oracle or materializing dense dosage
 matrices. Mutation-age filtering
 belongs to the simulation model in `gsim`; mutation-map ingestion,
 interpolation, and variant alignment remain preprocessing concerns outside
-this milestone.
+the founder generator.
 
 ## Historical copying is not pedigree meiosis
 
 The segment switches above approximate historical coalescent/recombination
 events to synthesize unrelated founder chromosomes.  They are not biological
-meioses between known parents.  A later pedigree milestone must take each
-founder's two already-phased chromosomes and perform new parental meioses on
-chromosome maps while preserving pedigree IDs and parentage.  It must not call
-this founder-copying process to create descendants.
+meioses between known parents.  `gsim_simulate_pedigree()` takes each
+founder's two already-phased chromosomes and performs new parental meioses on
+chromosome maps while preserving pedigree IDs and parentage. It does not call
+this founder-copying process to create descendants. See the
+[pedigree contract](pedigree_marker_meiosis.md).

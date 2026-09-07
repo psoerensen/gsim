@@ -2,9 +2,9 @@
 
 ## Scope and scientific separation
 
-This document freezes the provisional, internal marker-level inheritance model
-implemented by `gsim`.  HAPNEST-compatible founder generation and pedigree
-meiosis are separate processes.  The former models historical copying from a
+This document specifies the marker-level inheritance model shared by the
+internal byte oracle and current public packed simulation in `gsim`.
+HAPNEST-compatible founder generation and pedigree meiosis are separate processes.  The former models historical copying from a
 reference panel, including `N`, `Ne`, `rho`, coalescent ages, segment lengths,
 and mutation-age filtering.  The latter transmits one recombinant copy of each
 known parent's two chromosomes to a child.  None of the HAPNEST demographic or
@@ -12,7 +12,14 @@ mutation parameters participates in pedigree meiosis.
 
 Offspring mutation, gene conversion, segregation distortion, crossover
 interference, sex-specific maps, and pedigree inbreeding adjustments are not
-part of this milestone.
+part of the supported model.
+
+The raw matrices and internal return objects below describe the bounded oracle,
+not public storage. `gsim_simulate_pedigree()` consumes phased HAP/BIM/FAM,
+returns a compact HAP or BED manifest, and applies the same inheritance and
+crossover semantics to packed chromosomes. It divides BIM cumulative cM by 100
+for the Morgan-scale meiosis model below. See the
+[packed workflow guide](packed_chromosome_simulation.md).
 
 ## Pedigree and founder contract
 
@@ -114,13 +121,13 @@ caller-supplied starting homologue and sorted crossover positions and performs
 no random draws, allowing the boundary and alternating-copy rules to be tested
 against hand-calculated gametes.
 
-## Ownership and future production path
+## Oracle and production ownership
 
 This deterministic simulation primitive and its internal R interface belong in
 `gsim`.  Its raw byte matrices are a small-data oracle and are not bit-packed.
 The chromosome-local production path uses gsim's private bit-packed haplotype
 storage and materialization, as specified in
-`packed_chromosome_simulation.md`.  The byte implementation here remains the
-independent exact oracle. Aligned variant, genetic-map, and panel metadata use
+[the packed workflow guide](packed_chromosome_simulation.md). The byte
+implementation here remains the independent exact oracle. Aligned variant, genetic-map, and panel metadata use
 gsim's private metadata layer; the internal packed PLINK dataset layer composes
 that metadata with the private BED sink.

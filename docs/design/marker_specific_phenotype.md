@@ -9,21 +9,22 @@ Glist access. HAPNEST is provenance for one possible parameterization of
 marker-specific variance; callers supply the general probabilities and weights
 required by their study.
 
-This milestone adds no dominance, epistasis, GxE, multiallelic effects, or new
-genotype representation. The established architectures and their defaults are
-unchanged.
+The model does not include dominance, epistasis, GxE, multiallelic effects, or a new
+genotype representation.
 
-## Existing call flow
+## Call flow
 
 `gsim()` first establishes canonical marker and sample IDs. In Glist mode this
 uses marker metadata only. It then builds component probabilities, draws marker
 components, and asks `getG()` only for the selected causal columns. Effects,
 genetic values, residuals, phenotypes, and optional summary statistics follow.
 The full Glist genotype panel is read only in chunks when marginal summary
-statistics are explicitly requested.
+statistics are explicitly requested. Selected causal columns form a dense R
+matrix; this is not a chromosome-local packed phenotype engine. qgg is required
+for this Glist route and optional for other gsim workflows.
 
-The existing `marker_multipliers` path already represents marker-specific
-active-effect variance. The new `causal_probability` path is deliberately
+The `marker_multipliers` path represents marker-specific
+active-effect variance. The `causal_probability` path is deliberately
 independent of it.
 
 ## Probability contract
@@ -110,7 +111,7 @@ drawn, the complete weight vector is subset to causal markers by the existing
 effect path, and only causal genotype columns are requested from `getG()`.
 For in-memory or internally simulated genotypes, MAF comes from the existing
 genotype-based calculation unless supplied; LD score is never calculated by
-this milestone and must be supplied when `b` is nonzero.
+gsim and must be supplied when `b` is nonzero.
 
 `annotation_score` is exactly one positive scalar score per marker and affects
 only conditional effect variance. It is not inferred from, combined with, or

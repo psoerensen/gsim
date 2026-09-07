@@ -1,9 +1,17 @@
 # gsim
 
-`gsim` is a compact R package for simulating genomic phenotypes with exact
-marker-level truth for validation and methodological studies. Genotypes can be
-simulated internally as independent binomial markers, supplied as an in-memory
-matrix, or read from an optional `qgg::Glist` when `qgg` is installed.
+`gsim` simulates genotypes, pedigrees, and genomic phenotypes for validation
+and methodological studies. Its standalone packed workflow imports phased VCF
+reference panels or opens HAP/BIM/FAM, samples unrelated synthetic founders
+using a HAPNEST-informed model, and transmits their chromosomes through a
+pedigree by Mendelian meiosis. Reusable phased HAP and unphased BED outputs
+connect genotype simulation to phenotype studies with exact marker-level truth.
+Phenotype inputs can also be independent binomial markers, a caller-provided
+matrix, or a `qgg::Glist`. qgg is optional generally and required for the
+currently supported Glist workflow.
+
+See the [documentation index](docs/README.md) for scientific contracts, public
+API references, complete examples, and qualification evidence.
 
 The simulator supports BayesC, BayesR, major-plus-polygenic, MAF-dependent,
 clustered, and fixed-effect architectures. It can simulate one or multiple
@@ -77,7 +85,8 @@ with `gsim`.
 
 When a Glist contains `maf` and `ldscores` metadata, conditional effect-variance
 weights can be derived without loading the complete genotype matrix. The scalar
-annotation score is separate from the SBayesRC annotation matrix `A`:
+annotation score is separate from the SBayesRC annotation matrix `A`.
+This workflow sketch requires a prepared `Glist` with aligned metadata:
 
 ```r
 marker_ids <- as.character(unlist(Glist$rsidsLD, use.names = FALSE))
@@ -101,7 +110,9 @@ causal. Effects scale by the square root of the resulting variance weight.
 
 The supported packed workflow explicitly separates a real reference panel, an
 unrelated synthetic base population, and its Mendelian pedigree descendants.
-It never constructs a dense whole-genome allele or genotype matrix:
+The packed genotype stages never construct a dense whole-genome allele or
+genotype matrix. This workflow sketch requires a VCF, genetic map, named model
+inputs, and a pedigree whose founder IDs match the generated base IDs:
 
 ```r
 reference <- gsim_import_vcf("reference.vcf.gz", genetic_map, "reference")
@@ -138,7 +149,8 @@ for an internet-enabled GRCh37 workflow using the official approximately
 ## Genotypes to phenotypes
 
 Packed simulation output can enter the existing phenotype engine without a new
-adapter:
+adapter. This workflow sketch requires prepared reference and pedigree inputs;
+`...` stands for required founder-model arguments, not runnable R code:
 
 ```r
 reference <- gsim_reference("reference")
@@ -159,12 +171,16 @@ BED dosage is H1 + H2, BIM order becomes `Glist$rsids`, FAM order becomes
 `Glist$ids`, and `gprep()` supplies `Glist$maf`. LD scores must be prepared by
 the established Glist workflow or supplied as a complete named vector. During
 phenotype simulation, gsim selects causal markers first and requests only those
-columns from `qgg::getG()` unless summary statistics are requested.
+columns from `qgg::getG()` unless summary statistics are requested. Selected
+causal columns are decoded into a dense R matrix; this is not a chromosome-local
+packed phenotype engine. The supported Glist route uses qgg; compatibility with
+gsuite-generated Glist objects is not established by the retained evidence.
 
 The three marker-level controls are distinct: `q_j` is causal probability,
 active `pi_k` values are conditional mixture proportions, and `w_j` is the
 conditional effect-variance multiplier. See the
-[complete local-data example](inst/examples/end_to_end_phenotype.R) and the
+[complete local-data example](inst/examples/end_to_end_phenotype.R)
+(run after `library(gsim)`, with qgg installed) and the
 [qualification contract](docs/qualification/genotypes_to_phenotypes.md) for the
 default, causal-probability, variance-weight, and combined configurations.
 
@@ -214,3 +230,7 @@ The initial implementation was extracted from `sblr` commit
 `e9532f8b852f973f34f531a1cc9101da75e1f0ad`, using `R/gsim.R`,
 `R/gsim_internal.R`, and `tests/testthat/test-gsim.R` as the canonical source
 paths.
+
+HAPNEST scientific attribution and gbits/gmat component provenance are retained
+in the [packed workflow guide](docs/design/packed_chromosome_simulation.md) and
+the applicable [copyright and license notices](inst/COPYRIGHTS).
