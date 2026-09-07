@@ -53,7 +53,11 @@ gsim(
 )
 }
 \arguments{
-\item{Glist}{Optional qgg genotype-list object.}
+\item{Glist}{Optional qgg BED-backed genotype-list object. SNP-major
+\code{bedfiles}, companion \code{bimfiles}/\code{famfiles} (or matching filename stems),
+\code{ids}, and per-file \code{rsids} are required. Physical BIM/FAM identities define
+offsets and selected order. qgg is needed to construct Glist with \code{gprep},
+but not for native accumulation from an existing supported object.}
 
 \item{W}{Optional in-memory genotype matrix. At most one of \code{Glist} and \code{W}
 may be supplied. If both are NULL, independent binomial genotypes are
@@ -162,16 +166,22 @@ mode, \code{n = NULL} uses all available samples.}
 
 \item{scale_effects}{Whether effects are calibrated to \code{vg}.}
 
-\item{return_genotypes}{Return causal genotype columns in \code{W_causal}.}
+\item{return_genotypes}{Return causal genotype columns in \code{W_causal} for
+in-memory or simulated input. Must be FALSE for bounded Glist input.}
 
 \item{return_marker_probabilities}{Return the full marker probability surface.}
 
 \item{compute_sumstats}{Compute marginal GWAS statistics. Glist data are read
 in chunks for this optional step.}
 
-\item{chunk_size}{Maximum marker columns requested in each Glist read.}
+\item{chunk_size}{Maximum marker columns requested in each Glist read;
+capped internally at 64, including optional summary statistics. Transient
+decoded copies are bounded by this cap, independently of causal count.}
 
-\item{getG_fun}{Optional replacement for \code{qgg::getG}, primarily for tests.}
+\item{getG_fun}{Optional deterministic custom reader with the \code{qgg::getG}
+calling convention. Must honor bounded requests and return consistent raw
+dosages across repeated reads. NULL uses native BED access; unsupported
+storage errors instead of silently falling back to dense extraction.}
 }
 \value{
 A list containing phenotypes, genetic values, residuals, exact marker
@@ -179,12 +189,15 @@ effects and states, annotation truth, probability surfaces, the complete
 canonical \code{causal_probability} and \code{marker_multipliers} vectors, compact
 provenance under \code{settings$causal_probability} and
 \code{settings$marker_multipliers} (including the variance formula, exponents,
-metadata sources, and alignment), and optional summary statistics.
+metadata sources, and alignment), and optional summary statistics. Glist
+\code{settings$genotype_stream} records the backend and buffer capacity. Full
+marker effects/probability surfaces and optional summary tables still scale
+with marker count; this is not a constant-memory phenotype workflow.
 }
 \description{
 \code{gsim()} simulates genomic data for validation and methodological studies. In
-Glist mode, causal variants are selected from marker metadata before any
-genotypes are read; only those causal columns are requested from
-\code{qgg::getG()} to construct genetic values. Genome-wide genotypes are read in
+Glist mode, causal variants are selected from marker metadata. Selected BED dosages are scanned in bounded
+blocks for statistics, then accumulated natively for all traits without a
+complete causal-genotype matrix. Genome-wide genotypes are read in bounded
 chunks only when \code{compute_sumstats = TRUE}.
 }

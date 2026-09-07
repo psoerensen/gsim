@@ -281,7 +281,8 @@ testthat::test_that("Glist metadata derives weights before causal-only loading",
   testthat::expect_identical(from_glist$Y, explicit$Y)
   testthat::expect_setequal(requested_from_glist, names(q)[q == 1])
   testthat::expect_setequal(requested$rsids, names(q)[q == 1])
-  testthat::expect_length(requested_from_glist, sum(q))
+  # Statistics and accumulation are separate bounded passes.
+  testthat::expect_length(requested_from_glist, 2L * sum(q))
   testthat::expect_identical(
     from_glist$settings$marker_multipliers$sources$maf$source, "Glist"
   )
@@ -552,7 +553,7 @@ testthat::test_that("direct causal probabilities and variance weights are indepe
   common <- list(
     Glist = Glist, architecture = "bayesr", seed = 24601,
     causal_probability = q[rev(names(q))], getG_fun = fake_getG,
-    scale_effects = FALSE, return_genotypes = TRUE
+    scale_effects = FALSE, return_genotypes = FALSE
   )
 
   unit <- do.call(gsim, common)
@@ -584,8 +585,8 @@ testthat::test_that("direct causal probabilities and variance weights are indepe
   )
   testthat::expect_setequal(requested_unit, names(q_canonical)[active])
   testthat::expect_setequal(requested$rsids, names(q_canonical)[active])
-  testthat::expect_length(requested_unit, sum(active))
-  testthat::expect_length(requested$rsids, sum(active))
+  testthat::expect_length(requested_unit, 2L * sum(active))
+  testthat::expect_length(requested$rsids, 2L * sum(active))
   testthat::expect_identical(unit$component, weighted$component)
   testthat::expect_equal(
     weighted$B[active, , drop = FALSE],
@@ -733,7 +734,7 @@ testthat::test_that("gsim works with the qgg PLINK fixture", {
     architecture = "bayesr",
     n_causal = 10L,
     seed = 1,
-    return_genotypes = TRUE
+    return_genotypes = FALSE
   )
 
   testthat::expect_equal(nrow(sim$Y), 489L)
@@ -741,7 +742,10 @@ testthat::test_that("gsim works with the qgg PLINK fixture", {
   testthat::expect_equal(sim$settings$n_causal, 10L)
   testthat::expect_equal(
     unname(sim$G),
-    unname(sim$W_causal %*% sim$B_causal),
+    unname(scale(do.call(cbind, lapply(seq_along(Glist$rsids), function(chr) {
+      take <- intersect(sim$causal_rsids, Glist$rsids[[chr]])
+      qgg::getG(Glist, chr = chr, rsids = take, ids = rownames(sim$G))
+    }))[, sim$causal_rsids, drop = FALSE]) %*% sim$B_causal),
     tolerance = 1e-12
   )
 })

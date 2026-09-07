@@ -43,19 +43,18 @@ covariance. Genotype-based phenotype simulation is a separate workflow.
 - [Copyrights and provenance](../inst/COPYRIGHTS) retain HAPNEST attribution
   and applicable gbits/gmat notices.
 
-qgg is optional for gsim generally and required for the supported Glist route.
-That phenotype route decodes selected causal columns into a dense matrix;
-optional summary statistics read all markers in chunks. It is not the packed
-chromosome-local phenotype engine. Compatibility with gsuite-generated Glist
-objects has not been established by this evidence.
+qgg is optional generally and used to construct Glist objects. Supported BED
+Glist accumulation is standalone and bounded; see the phenotype contract for
+selection, storage, memory and custom-reader limits. HAP phenotype input and
+gsuite-generated Glist compatibility are not established.
 
 ## Qualification and reproducibility
 
-All reports below remain public evidence, not new qualification of the current
-checkout. Historical recommendations are scoped to their measured revisions.
+Reports retain the scope and revision of their own qualification. Historical recommendations are scoped to their measured revisions.
 
 | Evidence | Scope and reproduction |
 | --- | --- |
+| [Bounded Glist accumulation](qualification/glist_bounded_accumulation.md) | 0.15.0 focused parity, malformed-input and bounded resource checks; [script](../tools/qualification/glist_streaming.R). |
 | [Genotypes to phenotypes](qualification/genotypes_to_phenotypes.md) | Small local fixture, qgg dosage/ID parity and phenotype controls; [example](../inst/examples/end_to_end_phenotype.R) and [test](../tests/testthat/test-end-to-end-phenotype.R). |
 | [Founder chromosome identity](qualification/hapnest_founder_chromosome_identity.md) | Exact byte/audit comparisons and intentional replacement of block-index streams; [tests](../tests/testthat/test-hapnest-founders.R). |
 | [Pedigree meiosis](qualification/pedigree_marker_meiosis.md) | Byte oracle, Mendelian consistency, and uncertainty-based relationship experiment; [tests](../tests/testthat/test-pedigree-genotypes.R). |

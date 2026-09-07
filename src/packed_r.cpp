@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "bed_storage.h"
+#include "bed_reader.h"
 #include "hap_storage.h"
 #include "packed_chromosome.h"
 
@@ -38,27 +39,6 @@ struct HapSink {
 struct HapReader {
     explicit HapReader(std::string path) : value(std::move(path)) {}
     gsim::native::PhasedHapReader value;
-};
-
-struct BedReader {
-    BedReader(const std::string& path, std::uint64_t individuals,
-              std::uint64_t markers)
-        : input(path, std::ios::binary), n(individuals), m(markers),
-          bytes_per_variant((individuals + 3u) / 4u) {
-        if (!input || n == 0u || m == 0u) {
-            throw std::runtime_error("cannot open bounded BED input");
-        }
-        std::uint8_t header[3]{};
-        input.read(reinterpret_cast<char*>(header), 3);
-        if (!input || header[0] != 0x6cu || header[1] != 0x1bu ||
-            header[2] != 0x01u) {
-            throw std::runtime_error("bounded BED input has invalid header");
-        }
-    }
-    std::ifstream input;
-    std::uint64_t n;
-    std::uint64_t m;
-    std::uint64_t bytes_per_variant;
 };
 
 [[noreturn]] void fail(const std::string& message) {
@@ -759,23 +739,14 @@ extern "C" SEXP C_gsim_packed_bed_read_all(
         const std::string path = scalar_utf8(path_sexp, "BED path");
         const int individuals = scalar_int(individuals_sexp, "individuals", 1);
         const int variants = scalar_int(variants_sexp, "variants", 1);
-        BedReader reader(path, static_cast<std::uint64_t>(individuals),
+        gsim::native::BedReader reader(path, static_cast<std::uint64_t>(individuals),
                          static_cast<std::uint64_t>(variants));
         SEXP output = PROTECT(Rf_allocMatrix(INTSXP, individuals, variants));
-        std::vector<std::int8_t> record(static_cast<std::size_t>(individuals));
-        std::vector<std::uint8_t> bytes(
-            static_cast<std::size_t>(reader.bytes_per_variant));
         for (int marker = 0; marker < variants; ++marker) {
-            reader.input.read(reinterpret_cast<char*>(bytes.data()),
-                              static_cast<std::streamsize>(bytes.size()));
-            if (!reader.input) fail("cannot read bounded BED variant");
-            for (int individual = 0; individual < individuals; ++individual) {
-                const std::uint8_t code =
-                    (bytes[static_cast<std::size_t>(individual / 4)] >>
-                     (2u * static_cast<unsigned int>(individual % 4))) & 3u;
-                static const int dosage[4] = {2, -1, 1, 0};
-                INTEGER(output)[individual + individuals * marker] = dosage[code];
-            }
+            reader.read_record(marker);
+            for (int individual = 0; individual < individuals; ++individual)
+                INTEGER(output)[individual + static_cast<R_xlen_t>(individuals) * marker] =
+                    reader.dosage(individual);
         }
         UNPROTECT(1);
         return output;

@@ -165,7 +165,7 @@ testthat::test_that("packed pedigree BED enters all four Glist phenotype models"
   }
   common <- list(
     Glist = Glist, architecture = "bayesr", standardize_W = FALSE,
-    scale_effects = FALSE, return_genotypes = TRUE,
+    scale_effects = FALSE, return_genotypes = FALSE,
     getG_fun = tracking_getG
   )
   default <- do.call(gsim, c(common, list(n_causal = 8L, seed = 8001)))
@@ -181,9 +181,10 @@ testthat::test_that("packed pedigree BED enters all four Glist phenotype models"
   }
   testthat::expect_identical(rng_default, rng_explicit_default)
   testthat::expect_identical(rownames(default$Y), pedigree$canonical_order)
-  testthat::expect_identical(
-    as.integer(default$W_causal),
-    as.integer(bed_dosage[, match(default$causal_rsids, marker_ids), drop = FALSE])
+  testthat::expect_equal(
+    unname(default$G),
+    unname(bed_dosage[, match(default$causal_rsids, marker_ids), drop = FALSE] %*% default$B_causal),
+    tolerance = 1e-12
   )
   testthat::expect_setequal(unique(requested$rsids), default$causal_rsids)
   testthat::expect_lt(length(unique(requested$rsids)), length(marker_ids))
@@ -265,9 +266,9 @@ testthat::test_that("packed pedigree BED enters all four Glist phenotype models"
     "explicit_input"
   )
 
-  causal_matrix_bytes <- as.numeric(utils::object.size(default$W_causal))
+  causal_matrix_bytes <- as.numeric(utils::object.size(bed_dosage[, match(default$causal_rsids, marker_ids), drop = FALSE]))
   full_diagnostic_bytes <- as.numeric(utils::object.size(glist_dosage))
   testthat::expect_lt(causal_matrix_bytes, full_diagnostic_bytes)
-  testthat::expect_equal(ncol(default$W_causal), 8L)
+  testthat::expect_null(default$W_causal)
   testthat::expect_equal(ncol(glist_dosage), 32L)
 })

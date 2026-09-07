@@ -7,8 +7,8 @@ using a HAPNEST-informed model, and transmits their chromosomes through a
 pedigree by Mendelian meiosis. Reusable phased HAP and unphased BED outputs
 connect genotype simulation to phenotype studies with exact marker-level truth.
 Phenotype inputs can also be independent binomial markers, a caller-provided
-matrix, or a `qgg::Glist`. qgg is optional generally and required for the
-currently supported Glist workflow.
+matrix, or a qgg Glist. qgg is optional generally and supplies Glist construction;
+native BED accumulation from an existing supported Glist does not require qgg.
 
 See the [documentation index](docs/README.md) for scientific contracts, public
 API references, complete examples, and qualification evidence. The
@@ -81,7 +81,7 @@ sim <- gsim(
 )
 ```
 
-Real `qgg::Glist` inputs are supported when `qgg` is installed. Scientific
+BED-backed qgg Glist inputs are supported; qgg supplies `gprep()` for preparation. Scientific
 validation studies remain in packages such as `sblrbench`; they are not bundled
 with `gsim`.
 
@@ -172,11 +172,22 @@ phenotype <- gsim(Glist = Glist, n_causal = 20, seed = 3)
 BED dosage is H1 + H2, BIM order becomes `Glist$rsids`, FAM order becomes
 `Glist$ids`, and `gprep()` supplies `Glist$maf`. LD scores must be prepared by
 the established Glist workflow or supplied as a complete named vector. During
-phenotype simulation, gsim selects causal markers first and requests only those
-columns from `qgg::getG()` unless summary statistics are requested. Selected
-causal columns are decoded into a dense R matrix; this is not a chromosome-local
-packed phenotype engine. The supported Glist route uses qgg; compatibility with
-gsuite-generated Glist objects is not established by the retained evidence.
+phenotype simulation, gsim selects causal markers first, computes statistics in
+blocks of at most `min(chunk_size, 64)` columns, and accumulates all traits
+natively from packed BED records. It never materializes an individuals by
+all-causal-markers matrix. Optional summary statistics scan all eligible markers
+with the same cap. qgg is needed for `gprep()` construction, not accumulation
+from an existing supported BED-backed Glist. HAP phenotype input and compatibility
+with gsuite-generated Glist objects are not established.
+
+Missing dosages use selected-sample means; optional standardization uses the
+selected-sample SD after imputation, preserving the phenotype model. Transient
+decoded blocks cost O(n ? block size); outputs cost O(n ? traits). Full returned
+marker effects, probability surfaces, metadata, annotations and optional summary
+tables still grow with marker count. `return_genotypes = TRUE` is rejected for
+Glist input; explicit in-memory `W` retains that option. See the
+[phenotype contract](docs/design/marker_specific_phenotype.md#bounded-bed-accumulation)
+and [bounded qualification](docs/qualification/glist_bounded_accumulation.md).
 
 The three marker-level controls are distinct: `q_j` is causal probability,
 active `pi_k` values are conditional mixture proportions, and `w_j` is the

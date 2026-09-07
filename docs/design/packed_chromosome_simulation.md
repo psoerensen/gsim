@@ -177,12 +177,14 @@ map interpolation, and parser memory bounds.
 
 ## Current limitations and phenotype handoff
 
-The no-dense-matrix guarantee applies to packed genotype import and simulation.
-The subsequent [Glist phenotype workflow](../qualification/genotypes_to_phenotypes.md)
-requires qgg and decodes selected causal columns into a dense R matrix; optional
-summary statistics read all markers in chunks. It is not a chromosome-local
-packed phenotype engine. qgg is optional for gsim generally; the supported
-Glist route is through qgg, with no established gsuite-generated Glist claim.
+The packed genotype stages do not allocate whole-genome dense matrices. The
+subsequent BED-backed [phenotype workflow](marker_specific_phenotype.md#bounded-bed-accumulation)
+uses bounded selected-column statistics and a native packed-record accumulation
+for all traits. Optional summary statistics use bounded blocks too. qgg supplies
+Glist construction, but is not required to accumulate from an existing supported
+BED-backed Glist. HAP phenotype input and gsuite-generated Glist compatibility
+are not established. Full-marker effects/truth and phenotype outputs still cost
+memory; the phenotype contract specifies these bounds.
 
 Plain, gzip, and BGZF VCF are supported through sequential scanning. BCF,
 indexed regional access, missing or multiallelic retained alleles, HAP compression

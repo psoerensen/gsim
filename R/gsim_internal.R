@@ -1,7 +1,7 @@
 # Internal helpers for gsim().
 #
-# These functions deliberately use base R only. qgg is needed only when gsim()
-# is called with a Glist and no custom getG_fun is supplied.
+# These helpers use base R; BED integration calls gsim private native code.
+# qgg is optional for constructing Glist objects, not native accumulation.
 
 `%||%` <- function(x, y) {
   if (is.null(x)) y else x
@@ -386,7 +386,7 @@
 }
 
 .gsim_chr_map_from_glist <- function(Glist, marker_ids) {
-  source <- Glist$rsidsLD %||% Glist$rsids
+  source <- Glist$rsids %||% Glist$rsidsLD
   if (is.null(source) || !is.list(source)) {
     return(stats::setNames(rep(NA_character_, length(marker_ids)), marker_ids))
   }
@@ -785,14 +785,6 @@
   B
 }
 
-.gsim_resolve_getG <- function(getG_fun) {
-  if (!is.null(getG_fun)) return(getG_fun)
-  if (!requireNamespace("qgg", quietly = TRUE)) {
-    .gsim_stop("qgg is required for Glist simulation, or supply getG_fun.")
-  }
-  qgg::getG
-}
-
 .gsim_call_getG <- function(getG_fun, Glist, marker_ids, sample_ids,
                             chr = NULL) {
   args <- list(Glist = Glist, rsids = marker_ids, ids = sample_ids,
@@ -824,6 +816,7 @@
 .gsim_load_glist_markers <- function(Glist, marker_ids, sample_ids, chr_map,
                                      getG_fun, chunk_size = 5000L) {
   if (!length(marker_ids)) .gsim_stop("No causal markers were selected.")
+  if (length(marker_ids) > 64L) .gsim_stop("Internal Glist reads are limited to 64 columns.")
   chunk_size <- as.integer(chunk_size)
   if (chunk_size < 1L) .gsim_stop("chunk_size must be positive.")
 
@@ -889,13 +882,28 @@
     starts <- seq.int(1L, length(ids_chr), by = chunk_size)
     for (start in starts) {
       take <- ids_chr[start:min(start + chunk_size - 1L, length(ids_chr))]
-      W <- .gsim_call_getG(
-        getG_fun, Glist, take, sample_ids,
-        chr = if (identical(chr_name, "NA")) NULL else chr_name
-      )
-      W <- .gsim_impute_and_standardize(W, standardize = standardize)
+      # Keep the established public chunk/trait row order, but never decode
+      # an entire user-sized chunk when it exceeds the private memory cap.
+      blocks <- lapply(seq.int(1L, length(take), by = 64L), function(first) {
+        selected <- take[first:min(first + 63L, length(take))]
+        W <- .gsim_call_getG(
+          getG_fun, Glist, selected, sample_ids,
+          chr = if (identical(chr_name, "NA")) NULL else chr_name
+        )
+        W <- .gsim_impute_and_standardize(W, standardize = standardize)
+        .gsim_compute_sumstats(W, Y, selected)
+      })
+      combined <- do.call(rbind, blocks)
+      traits <- lapply(seq_len(ncol(Y)), function(t) {
+        trait <- colnames(Y)[t] %||% paste0("D", t)
+        values <- combined[combined$trait == trait, , drop = FALSE]
+        values <- values[match(take, values$rsid), , drop = FALSE]
+        # Match the row names produced by the original named ssx/se vectors.
+        rownames(values) <- take
+        values
+      })
       z <- z + 1L
-      out[[z]] <- .gsim_compute_sumstats(W, Y, take)
+      out[[z]] <- do.call(rbind, traits)
     }
   }
   do.call(rbind, out)

@@ -1,12 +1,16 @@
 #' Simulate genomic data from an in-memory matrix or a qgg Glist
 #'
 #' `gsim()` simulates genomic data for validation and methodological studies. In
-#' Glist mode, causal variants are selected from marker metadata before any
-#' genotypes are read; only those causal columns are requested from
-#' `qgg::getG()` to construct genetic values. Genome-wide genotypes are read in
+#' Glist mode, causal variants are selected from marker metadata. Selected BED dosages are scanned in bounded
+#' blocks for statistics, then accumulated natively for all traits without a
+#' complete causal-genotype matrix. Genome-wide genotypes are read in bounded
 #' chunks only when `compute_sumstats = TRUE`.
 #'
-#' @param Glist Optional qgg genotype-list object.
+#' @param Glist Optional qgg BED-backed genotype-list object. SNP-major
+#'   `bedfiles`, companion `bimfiles`/`famfiles` (or matching filename stems),
+#'   `ids`, and per-file `rsids` are required. Physical BIM/FAM identities define
+#'   offsets and selected order. qgg is needed to construct Glist with `gprep`,
+#'   but not for native accumulation from an existing supported object.
 #' @param W Optional in-memory genotype matrix. At most one of `Glist` and `W`
 #'   may be supplied. If both are NULL, independent binomial genotypes are
 #'   simulated.
@@ -81,19 +85,28 @@
 #' @param seed Optional seed.
 #' @param standardize_W Whether loaded causal genotypes are standardized.
 #' @param scale_effects Whether effects are calibrated to `vg`.
-#' @param return_genotypes Return causal genotype columns in `W_causal`.
+#' @param return_genotypes Return causal genotype columns in `W_causal` for
+#'   in-memory or simulated input. Must be FALSE for bounded Glist input.
 #' @param return_marker_probabilities Return the full marker probability surface.
 #' @param compute_sumstats Compute marginal GWAS statistics. Glist data are read
 #'   in chunks for this optional step.
-#' @param chunk_size Maximum marker columns requested in each Glist read.
-#' @param getG_fun Optional replacement for `qgg::getG`, primarily for tests.
+#' @param chunk_size Maximum marker columns requested in each Glist read;
+#'   capped internally at 64, including optional summary statistics. Transient
+#'   decoded copies are bounded by this cap, independently of causal count.
+#' @param getG_fun Optional deterministic custom reader with the `qgg::getG`
+#'   calling convention. Must honor bounded requests and return consistent raw
+#'   dosages across repeated reads. NULL uses native BED access; unsupported
+#'   storage errors instead of silently falling back to dense extraction.
 #'
 #' @return A list containing phenotypes, genetic values, residuals, exact marker
 #'   effects and states, annotation truth, probability surfaces, the complete
 #'   canonical `causal_probability` and `marker_multipliers` vectors, compact
 #'   provenance under `settings$causal_probability` and
 #'   `settings$marker_multipliers` (including the variance formula, exponents,
-#'   metadata sources, and alignment), and optional summary statistics.
+#'   metadata sources, and alignment), and optional summary statistics. Glist
+#'   `settings$genotype_stream` records the backend and buffer capacity. Full
+#'   marker effects/probability surfaces and optional summary tables still scale
+#'   with marker count; this is not a constant-memory phenotype workflow.
 #' @export
 gsim <- function(
   Glist = NULL,
@@ -173,6 +186,9 @@ gsim <- function(
   W_full_raw <- NULL
   chr_map <- NULL
   getG_resolved <- NULL
+  bed_plan <- NULL
+  genotype_statistics <- NULL
+  genotype_stream <- NULL
 
   if (mode == "Glist") {
     marker_ids <- .gsim_marker_ids_from_glist(Glist, rsids)
@@ -192,7 +208,28 @@ gsim <- function(
       }
     }
     chr_map <- .gsim_chr_map_from_glist(Glist, marker_ids)
-    getG_resolved <- .gsim_resolve_getG(getG_fun)
+    if (return_genotypes) {
+      .gsim_stop("return_genotypes = TRUE is not supported for bounded Glist simulation; use W for an explicit dense return.")
+    }
+    stream_chunk_size <- as.integer(min(chunk_size, 64L))
+    if (is.null(getG_fun)) {
+      bed_plan <- .gsim_bed_plan(Glist, marker_ids, sample_ids)
+      getG_resolved <- .gsim_bed_getG(bed_plan)
+    } else {
+      if (!is.function(getG_fun)) .gsim_stop("getG_fun must be a function.")
+      getG_resolved <- getG_fun
+    }
+    genotype_stream <- list(
+      backend = if (is.null(bed_plan)) "bounded_custom_reader" else "native_bed_scalar",
+      block_markers = stream_chunk_size,
+      decoded_block_bytes = 8 * length(sample_ids) * stream_chunk_size,
+      packed_record_bytes = if (is.null(bed_plan)) NA_real_ else
+        max(vapply(bed_plan$files, function(x) ceiling(x[[2L]] / 4), numeric(1))),
+      statistics_population = "selected_samples",
+      missing = "selected_sample_mean",
+      scaling = "selected_sample_sd_after_imputation",
+      full_causal_matrix = FALSE
+    )
   } else {
     if (mode == "simulated") {
       n <- n %||% 1000L
@@ -448,14 +485,16 @@ gsim <- function(
   causal_ids <- marker_ids[causal_idx]
 
   if (mode == "Glist") {
-    W_causal_raw <- .gsim_load_glist_markers(
-      Glist, causal_ids, sample_ids, chr_map, getG_resolved, chunk_size
+    genotype_statistics <- .gsim_glist_statistics(
+      Glist, causal_ids, sample_ids, chr_map, getG_resolved,
+      stream_chunk_size, standardize_W
     )
+    maf_causal_observed <- genotype_statistics$maf
   } else {
     W_causal_raw <- W_full_raw[, causal_idx, drop = FALSE]
+    maf_causal_observed <- .gsim_maf_from_W(W_causal_raw)
   }
 
-  maf_causal_observed <- .gsim_maf_from_W(W_causal_raw)
   missing_maf <- !is.finite(maf_all[causal_ids])
   maf_all[causal_ids[missing_maf]] <- maf_causal_observed[missing_maf]
 
@@ -471,11 +510,16 @@ gsim <- function(
   }
   colnames(B) <- paste0("D", seq_len(nt))
 
-  W_causal <- .gsim_impute_and_standardize(
-    W_causal_raw, standardize = standardize_W
-  )
   B_causal <- B[causal_idx, , drop = FALSE]
-  G <- W_causal %*% B_causal
+  if (mode == "Glist") {
+    G <- .gsim_glist_accumulate(
+      bed_plan, genotype_statistics, B_causal, Glist, causal_ids, sample_ids,
+      chr_map, getG_resolved, stream_chunk_size, standardize_W
+    )
+  } else {
+    W_causal <- .gsim_impute_and_standardize(W_causal_raw, standardize_W)
+    G <- W_causal %*% B_causal
+  }
   colnames(G) <- paste0("D", seq_len(nt))
   rownames(G) <- sample_ids
 
@@ -488,7 +532,8 @@ gsim <- function(
     effect_scale <- sqrt(vg / raw_vg)
     B <- sweep(B, 2L, effect_scale, "*")
     B_causal <- B[causal_idx, , drop = FALSE]
-    G <- W_causal %*% B_causal
+    G <- if (mode == "Glist") sweep(G, 2L, effect_scale, "*") else
+      W_causal %*% B_causal
   }
 
   realized_vg <- apply(G, 2L, stats::var)
@@ -582,6 +627,7 @@ gsim <- function(
       compute_sumstats = compute_sumstats
     )
   )
+  if (mode == "Glist") out$settings$genotype_stream <- genotype_stream
   if (return_genotypes) out$W_causal <- W_causal
   class(out) <- c("gsim", "list")
   out

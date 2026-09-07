@@ -24,7 +24,11 @@ gbits provenance and MIT notice
 
 Internalized packed-haplotype, HAP v1, and BED components originated in our
 gbits project at revision 089bf1e69dea356248a62bb2d3bded4e84c64f7f. The
-adapted components retain the following applicable MIT notice:
+adapted components retain the following applicable MIT notice. Checked BED
+record I/O and the scalar selected-marker/all-trait multiplication loop in
+src/bed_reader.{h,cpp} additionally adapt gbits/src/bed_reader.cpp at revision
+02298cbb30e5d88acc0759d608631a0559675840 (xmat_scalar). No gbits adapter,
+shared-library interface, scheduling framework, or gmat wrapper is included:
 
 MIT License
 

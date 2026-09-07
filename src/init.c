@@ -58,7 +58,12 @@ extern SEXP C_gsim_metadata_vcf_start(SEXP, SEXP);
 extern SEXP C_gsim_metadata_vcf_next(SEXP);
 extern SEXP C_gsim_metadata_vcf_close(SEXP);
 
+extern SEXP C_gsim_bed_read_selected(SEXP, SEXP, SEXP, SEXP, SEXP);
+extern SEXP C_gsim_bed_accumulate(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
+
 static const R_CallMethodDef call_methods[] = {
+    {"C_gsim_bed_read_selected", (DL_FUNC) &C_gsim_bed_read_selected, 5},
+    {"C_gsim_bed_accumulate", (DL_FUNC) &C_gsim_bed_accumulate, 7},
     {"C_gsim_hapnest_founders", (DL_FUNC) &C_gsim_hapnest_founders, 17},
     {"C_gsim_hapnest_plan", (DL_FUNC) &C_gsim_hapnest_plan, 13},
     {"C_gsim_hapnest_chromosome_keys", (DL_FUNC) &C_gsim_hapnest_chromosome_keys, 1},

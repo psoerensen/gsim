@@ -20,8 +20,8 @@ causal-probability, variance-weight, and combined configurations. Its synthetic
 LD scores illustrate alignment and parameterization, not real reference LD.
 
 qgg is optional for gsim generally but required for this Glist workflow. The
-phenotype stage decodes selected causal columns into a dense matrix; it is not
-a chromosome-local packed phenotype engine. Compatibility with gsuite-generated
+phenotype stage uses bounded BED decoding and native accumulation; HAP
+phenotype input is not supported. The phenotype contract details memory bounds. Compatibility with gsuite-generated
 Glist objects is not established.
 
 ## 1000 Genomes chromosome 22

@@ -1,6 +1,12 @@
 # Packed genotypes to phenotypes
 
-## Supported public workflow
+This report retains the 0.14.0 dense-path measurements. From 0.15.0 the
+default BED Glist path uses bounded native accumulation; qgg supplies
+construction but is no longer needed for accumulation. See the
+[current phenotype contract](../design/marker_specific_phenotype.md#bounded-bed-accumulation)
+and [focused qualification](glist_bounded_accumulation.md).
+
+## Workflow at the measured revision
 
 No genotype/phenotype adapter is required. The shortest supported route is:
 

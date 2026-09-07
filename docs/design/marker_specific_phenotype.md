@@ -15,13 +15,11 @@ genotype representation.
 ## Call flow
 
 `gsim()` first establishes canonical marker and sample IDs. In Glist mode this
-uses marker metadata only. It then builds component probabilities, draws marker
-components, and asks `getG()` only for the selected causal columns. Effects,
-genetic values, residuals, phenotypes, and optional summary statistics follow.
-The full Glist genotype panel is read only in chunks when marginal summary
-statistics are explicitly requested. Selected causal columns form a dense R
-matrix; this is not a chromosome-local packed phenotype engine. qgg is required
-for this Glist route and optional for other gsim workflows.
+uses marker metadata only. It builds probabilities and draws components, computes
+selected causal genotype statistics in bounded blocks, draws effects, and
+accumulates genetic values natively. Residuals, phenotypes, and optional bounded
+summary-statistic scans follow. qgg supplies Glist construction through `gprep`;
+native BED accumulation from an existing supported object needs only gsim.
 
 The `marker_multipliers` path represents marker-specific
 active-effect variance. The `causal_probability` path is deliberately
@@ -144,3 +142,84 @@ range and geometric mean; full metadata vectors are not duplicated there.
 Causal settings retain the policy, alignment, range, mean, and expected causal
 count `sum(q_j)`. The existing full component-probability surface remains
 optional through `return_marker_probabilities`.
+
+## Bounded BED accumulation
+
+For BED-backed Glist input, `gsim()` uses `.gsim_bed_plan()` to align canonical
+sample and marker IDs to each physical FAM and BIM, `.gsim_glist_statistics()`
+to freeze transformations, then `.gsim_glist_accumulate()` calls the registered
+private `C_gsim_bed_accumulate`. Its standalone `BedReader` adapts checked record
+I/O and the scalar `xmat_scalar` loop from gbits (see
+[provenance](../../inst/COPYRIGHTS)). It reads each selected marker for all traits
+in canonical causal order, retaining one packed physical BED record. The existing
+packed BED diagnostic reader reuses this checked reader. No sibling shared
+library, external ABI discovery, adapter layer, or configured path is required.
+
+For marker j, let x be BIM A1 dosage (00 ? 2, 01 ? missing, 10 ? 1,
+11 ? 0). Replace missing values with the mean of observed dosages among the
+**selected samples**. With `standardize_W = TRUE`, subtract the imputed column
+mean and divide by its sample SD (denominator n ? 1 after imputation). With
+FALSE, use imputed raw dosages. All-missing causal columns fail; invariant
+columns fail when standardizing, and can contribute unstandardized provided
+aggregate genetic variance is positive. Glist allele frequencies are not used
+for this transformation. Observed causal MAF is mean raw dosage / 2, folded
+about 0.5, ignoring missing values. Existing supplied MAF and Glist MAF used by
+the derived variance model retain their precedence; observed values only fill
+missing causal entries. Conditional probabilities and effect-variance weights
+are unchanged.
+
+Raw effect draws keep the same R RNG calls and ordering. Each trait's genetic
+value is the sum of transformed dosage ? raw effect over causal markers.
+Calibration uses sqrt(target variance / observed genetic variance), multiplying
+both effects and the accumulated genetic values. Returned `B` and `B_causal`
+are the calibrated effects; `settings$effect_scale` identifies that rescaling.
+This replaces a second dense matrix product and allows ordinary floating-point
+sum differences, not changes to the scientific model. Residual covariance is
+formed from realized genetic variance, target h2 and re; the existing normal
+residual draw and Y = G + E remain unchanged. `rg` describes effect covariance;
+it is not an assertion that finite-sample genetic correlations equal the target.
+
+### Supported storage and identity
+
+The default route requires SNP-major BED, six-column BIM/FAM, unique sample IDs
+and globally unique marker IDs, and `Glist$bedfiles`, `ids`, and per-file `rsids`.
+`bimfiles`/`famfiles` can be supplied or inferred from matching `.bed` stems.
+Optional `n`, `mchr`, `a1` and `a2` must agree with the declared catalog and
+physical allele orientation. Selected rows and columns may be noncontiguous
+and reordered, across multiple files with independently ordered FAM rows.
+`rsidsLD` may define eligible markers; physical offsets always come from BIM,
+not positions in filtered `rsids` or `rsidsLD`. This repairs the old qgg access
+assumption for filtered metadata rather than reproducing its wrong offsets.
+Each BED header, exact extent and selected offset is checked before access.
+
+Other automatic storage modes are unsupported; the former default qgg reader
+also used `bedfiles`. An explicit `getG_fun` retains a bounded custom route with
+the established callback signature. It must return deterministic raw dosages,
+honor requested IDs/order and bounded requests, and tolerate a statistics pass
+plus an accumulation pass (and optional summary pass). gsim cannot bound memory
+allocated inside a caller's callback. No dense fallback is used. HAP phenotype
+input and broad gsuite Glist compatibility are not established.
+
+### Complete memory bound
+
+Each statistics or summary request is capped at B = min(chunk_size, 64),
+independent of causal count C. Several transient raw, imputed, centered and
+summary-work matrices can coexist, each at most n ? B; this is O(nB), not a
+single-buffer peak claim. The native multiplication itself holds one packed
+record of ceil(physical sample count / 4) bytes and an n ? traits result.
+Calibration and residual generation create further n ? traits copies.
+
+Existing returned effects and truth include full m ? traits `B`, C ? traits
+`B_causal`, m ? mixture-component probability arrays, optional m ? annotation
+arrays, and optional m ? traits summary tables (including transient frame
+assembly). Metadata includes per-file sample mappings and BIM/FAM catalogs.
+Thus total working storage is O(n ? traits + m ? traits + C ? traits +
+m ? components + m ? annotations + metadata + nB), not constant memory or
+strictly O(C ? traits) while the existing full-marker truth contract is retained.
+`settings$genotype_stream` records the backend, decode capacity and packed
+record bytes, not measured peak process memory. Glist `return_genotypes = TRUE`
+is explicitly rejected; W and internally simulated paths retain dense returns.
+
+See the [focused qualification](../qualification/glist_bounded_accumulation.md)
+for baseline, allocation and resource evidence. Historical phenotype reports
+retain their original dense-path measurements.

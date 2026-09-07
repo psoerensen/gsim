@@ -10,7 +10,8 @@ Own deterministic simulation primitives, simulation-facing R APIs, and the
 private packed genotype storage and file I/O needed by those workflows. Do not
 turn gsim into a general-purpose matrix library or place numerical solvers,
 mixed-model estimation, general matrix kernels, scoring, or correlation methods
-here. qgg is optional generally and required for the supported Glist workflow;
+here. qgg is optional generally and used for Glist construction; native BED
+phenotype accumulation from supported Glist objects does not require qgg;
 no sibling native project dependency is required.
 
 ## Build and test
