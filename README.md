@@ -259,3 +259,9 @@ are outside the initial interface. See the
 [scientific contract](docs/design/gene_sets.md) and the
 [short runnable example](inst/examples/gene_sets.R), which uses only synthetic
 local inputs. Substitute your own two-column `snp`/`gene` mapping for real data.
+
+## License
+
+The project is licensed under the [GNU General Public License version 3 only](LICENSE)
+(SPDX: `GPL-3.0-only`; R DESCRIPTION: `GPL-3`). Existing third-party notices
+and component provenance remain in [inst/COPYRIGHTS](inst/COPYRIGHTS).
