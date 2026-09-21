@@ -1,5 +1,15 @@
 # AGENTS.md
 
+## Ecosystem orientation
+
+For cross-repository work, read the optional local
+[agent overview](../gfactory/docs/agent-overview.md), then only the relevant
+owner contract and current source. It gives ownership, reuse links and current
+priorities; this repository retains its own interfaces and build instructions.
+If private gfactory is absent, continue with local guidance; do not fetch it or
+make builds, tests, runtime, public evidence or website rendering depend on it.
+A cross-repository link does not authorize edits in another repository.
+
 ## Purpose
 
 `gsim` provides simulation functionality for the broader gsuite ecosystem.
