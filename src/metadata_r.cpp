@@ -149,8 +149,9 @@ extern "C" SEXP C_gsim_metadata_variant_create(
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_metadata_sample_create(
-    SEXP family, SEXP ids, SEXP paternal, SEXP maternal, SEXP sex) {
+static SEXP sample_create_impl(
+    SEXP family, SEXP ids, SEXP paternal, SEXP maternal, SEXP sex,
+    bool allow_external_parents) {
     try {
         const auto families = strings(family, "family IDs");
         const auto identifiers = strings(ids, "individual IDs");
@@ -173,11 +174,18 @@ extern "C" SEXP C_gsim_metadata_sample_create(
                                static_cast<std::uint32_t>(value)});
         }
         return make_metadata(new Metadata(
-            md::ValidatedSampleMetadata(std::move(records))));
+            md::ValidatedSampleMetadata(std::move(records),allow_external_parents)));
     } catch (const std::exception& ex) {
         Rf_error("native sample metadata: %s", ex.what());
     }
     return R_NilValue;
+}
+
+extern "C" SEXP C_gsim_metadata_sample_create(SEXP family, SEXP ids, SEXP paternal, SEXP maternal, SEXP sex) {
+    return sample_create_impl(family,ids,paternal,maternal,sex,false);
+}
+extern "C" SEXP C_gsim_metadata_sample_create_external(SEXP family, SEXP ids, SEXP paternal, SEXP maternal, SEXP sex) {
+    return sample_create_impl(family,ids,paternal,maternal,sex,true);
 }
 
 extern "C" SEXP C_gsim_metadata_write_bim(SEXP pointer, SEXP path) {
@@ -243,10 +251,10 @@ extern "C" SEXP C_gsim_metadata_read_bim(SEXP path) {
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_metadata_read_fam(SEXP path) {
+static SEXP read_fam_impl(SEXP path,bool allow_external_parents) {
     try {
         Metadata* value = new Metadata(md::ValidatedSampleMetadata::read_fam(
-            scalar_utf8(path, "FAM path")));
+            scalar_utf8(path, "FAM path"),allow_external_parents));
         SEXP pointer = PROTECT(make_metadata(value));
         const auto& records = value->samples->records();
         require_r_length(records.size(), "FAM record count");
@@ -277,6 +285,9 @@ extern "C" SEXP C_gsim_metadata_read_fam(SEXP path) {
     }
     return R_NilValue;
 }
+
+extern "C" SEXP C_gsim_metadata_read_fam(SEXP path) {return read_fam_impl(path,false);}
+extern "C" SEXP C_gsim_metadata_read_fam_external(SEXP path) {return read_fam_impl(path,true);}
 
 extern "C" SEXP C_gsim_metadata_vcf_open(
     SEXP path, SEXP selected_samples, SEXP selected_chromosome, SEXP region,

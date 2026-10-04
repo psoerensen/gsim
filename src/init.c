@@ -1,6 +1,10 @@
 #include <R.h>
 #include <Rinternals.h>
 #include <R_ext/Rdynload.h>
+extern SEXP C_gsim_breeding_pool_values(SEXP,SEXP,SEXP,SEXP);
+extern SEXP C_gsim_breeding_checksum(SEXP);
+extern SEXP C_gsim_metadata_sample_create_external(SEXP,SEXP,SEXP,SEXP,SEXP);
+extern SEXP C_gsim_metadata_read_fam_external(SEXP);
 #include <R_ext/Visibility.h>
 
 extern SEXP C_gsim_hapnest_founders(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP,
@@ -60,8 +64,26 @@ extern SEXP C_gsim_metadata_vcf_close(SEXP);
 
 extern SEXP C_gsim_bed_read_selected(SEXP, SEXP, SEXP, SEXP, SEXP);
 extern SEXP C_gsim_bed_accumulate(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
+extern SEXP C_gsim_breeding_order(SEXP, SEXP, SEXP);
+extern SEXP C_gsim_breeding_select(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
+extern SEXP C_gsim_breeding_mate(SEXP, SEXP, SEXP, SEXP);
+extern SEXP C_gsim_breeding_records(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
+extern SEXP C_gsim_breeding_normalize(SEXP, SEXP, SEXP);
+extern SEXP C_gsim_breeding_pool_bed(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
+extern SEXP C_gsim_breeding_pool_covariance(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
 
 static const R_CallMethodDef call_methods[] = {
+    {"C_gsim_breeding_checksum", (DL_FUNC) &C_gsim_breeding_checksum, 1},
+    {"C_gsim_metadata_sample_create_external", (DL_FUNC) &C_gsim_metadata_sample_create_external, 5},
+    {"C_gsim_metadata_read_fam_external", (DL_FUNC) &C_gsim_metadata_read_fam_external, 1},
+    {"C_gsim_breeding_pool_values", (DL_FUNC) &C_gsim_breeding_pool_values, 4},
+    {"C_gsim_breeding_order", (DL_FUNC) &C_gsim_breeding_order, 3},
+    {"C_gsim_breeding_select", (DL_FUNC) &C_gsim_breeding_select, 6},
+    {"C_gsim_breeding_mate", (DL_FUNC) &C_gsim_breeding_mate, 4},
+    {"C_gsim_breeding_records", (DL_FUNC) &C_gsim_breeding_records, 11},
+    {"C_gsim_breeding_normalize", (DL_FUNC) &C_gsim_breeding_normalize, 3},
+    {"C_gsim_breeding_pool_bed", (DL_FUNC) &C_gsim_breeding_pool_bed, 11},
+    {"C_gsim_breeding_pool_covariance", (DL_FUNC) &C_gsim_breeding_pool_covariance, 11},
     {"C_gsim_bed_read_selected", (DL_FUNC) &C_gsim_bed_read_selected, 5},
     {"C_gsim_bed_accumulate", (DL_FUNC) &C_gsim_bed_accumulate, 7},
     {"C_gsim_hapnest_founders", (DL_FUNC) &C_gsim_hapnest_founders, 17},

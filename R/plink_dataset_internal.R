@@ -45,7 +45,7 @@
   )
 }
 
-.gsim_plink_validate_samples <- function(metadata) {
+.gsim_plink_validate_samples <- function(metadata, allow_external_parents = FALSE) {
   if (!is.data.frame(metadata)) {
     .gsim_stop("sample_metadata must be a data frame.")
   }
@@ -85,7 +85,7 @@
     stringsAsFactors = FALSE
   )
   pointer <- .Call(
-    C_gsim_metadata_sample_create, normalized$family_id,
+    if(allow_external_parents) C_gsim_metadata_sample_create_external else C_gsim_metadata_sample_create, normalized$family_id,
     normalized$individual_id, normalized$paternal_id,
     normalized$maternal_id, normalized$sex
   )
@@ -239,9 +239,9 @@
   sample_metadata,
   overwrite = FALSE,
   buffer_variants = 64L,
-  provenance = list()
+  provenance = list(), allow_external_parents = FALSE
 ) {
-  validated_samples <- .gsim_plink_validate_samples(sample_metadata)
+  validated_samples <- .gsim_plink_validate_samples(sample_metadata, allow_external_parents)
   targets <- .gsim_plink_targets(prefix)
   overwrite <- .gsim_bed_sink_flag(overwrite, "overwrite")
   exists <- file.exists(targets)

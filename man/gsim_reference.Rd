@@ -15,4 +15,6 @@ A \code{gsim_reference} descriptor containing paths and stable identities.
 \description{
 Reconstructs a lightweight validated descriptor for an existing phased
 dataset. HAP counts and chromosome ranges are checked against BIM/FAM.
+Cohort FAM files may refer to parents outside the dataset; their ancestral
+parentage must be validated separately in the full pedigree.
 }

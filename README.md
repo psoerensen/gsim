@@ -27,6 +27,15 @@ marker effects and states, causal markers, probability surfaces, targets,
 realized quantities, and settings/provenance used to generate the data. These
 outputs are intended to make validation studies directly auditable.
 
+Composable [breeding simulation building blocks](docs/design/breeding_building_blocks.md)
+support externally scored or random parent selection, mating, incremental
+packed offspring cohorts, fixed marker-effect/base state, genomic single-trait,
+multitrait and longitudinal records, representative sampling with parent
+retention, and paired pooled observations. Computation uses the native backend;
+R supplies contracts and orchestration. Prediction and model fitting remain
+external. The [local example](inst/examples/breeding_building_blocks.R) requires
+no downloads or qgg.
+
 ## Installation
 
 Install the current release directly from GitHub with `remotes`:

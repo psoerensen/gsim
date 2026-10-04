@@ -344,7 +344,7 @@ MetadataWriteResult ValidatedVariantMetadata::write_bim(
 }
 
 ValidatedSampleMetadata::ValidatedSampleMetadata(
-    std::vector<SimulationSampleMetadata> records)
+    std::vector<SimulationSampleMetadata> records, bool allow_external_parents)
     : records_(std::move(records)) {
   if (records_.empty()) {
     throw Error(StatusCode::invalid_extent,
@@ -388,19 +388,20 @@ ValidatedSampleMetadata::ValidatedSampleMetadata(
     }
     const auto sire = positions.find(record.paternal_id);
     const auto dam = positions.find(record.maternal_id);
-    if (sire == positions.end() || dam == positions.end()) {
+    if (!allow_external_parents && (sire == positions.end() || dam == positions.end())) {
       throw Error(StatusCode::invalid_argument,
                   "known parents must be present in the written sample set");
     }
-    if (sire->second >= index || dam->second >= index) {
+    if ((sire != positions.end() && sire->second >= index) ||
+        (dam != positions.end() && dam->second >= index)) {
       throw Error(StatusCode::invalid_argument,
                   "known parents must precede offspring in FAM/BED order");
     }
-    if (records_[sire->second].sex == 2u) {
+    if (sire != positions.end() && records_[sire->second].sex == 2u) {
       throw Error(StatusCode::invalid_argument,
                   "a known female cannot be recorded as a paternal parent");
     }
-    if (records_[dam->second].sex == 1u) {
+    if (dam != positions.end() && records_[dam->second].sex == 1u) {
       throw Error(StatusCode::invalid_argument,
                   "a known male cannot be recorded as a maternal parent");
     }
@@ -416,7 +417,7 @@ ValidatedSampleMetadata::ValidatedSampleMetadata(
 }
 
 ValidatedSampleMetadata ValidatedSampleMetadata::read_fam(
-    const std::string& path) {
+    const std::string& path, bool allow_external_parents) {
   return ValidatedSampleMetadata(read_records<SimulationSampleMetadata>(
       path, "FAM", [](const std::vector<std::string>& fields,
                       std::uint64_t line) {
@@ -433,7 +434,7 @@ ValidatedSampleMetadata ValidatedSampleMetadata::read_fam(
         return SimulationSampleMetadata{
             fields[0], fields[1], fields[2], fields[3],
             static_cast<std::uint32_t>(sex)};
-      }));
+      }), allow_external_parents);
 }
 
 std::uint64_t ValidatedSampleMetadata::size() const noexcept {

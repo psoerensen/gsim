@@ -6,6 +6,11 @@ the versions, fixtures, and limits of their original measurements.
 
 ## Authoritative contracts
 
+- [Breeding simulation building blocks](design/breeding_building_blocks.md):
+  supplied parentage, selection, mating, incremental packed cohorts, persistent
+  genomic truth, correlated records, sampling and weighted pools with overlap
+  covariance. Includes a small local workflow and qualification limits.
+
 - [Packed simulation workflow and native architecture](design/packed_chromosome_simulation.md):
   reference, founder, and pedigree roles; HAP/BED/BIM/FAM; identity alignment;
   ownership, lifetime, deterministic batching/threading, and memory bounds.
@@ -35,6 +40,11 @@ parent-average values are not exact draws from a pedigree relationship
 covariance. Genotype-based phenotype simulation is a separate workflow.
 
 ## Examples and development
+
+- [Composable breeding workflow](../inst/examples/breeding_building_blocks.R)
+  uses a tiny synthetic phased panel, native selection/meiosis, genomic records,
+  parent retention and matched or mismatched pools. No external predictor is
+  fitted; an external caller can supply its predictions for selection.
 
 - [1000 Genomes chromosome 22](../inst/examples/1000G_chr22.R) is a complete
   GRCh37 example that downloads official reference/map inputs when absent.

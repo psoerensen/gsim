@@ -3,7 +3,7 @@ Type: Package
 Author: Peter Soerensen [aut, cre]
 Maintainer: Peter Soerensen <peter.sorensen@r-qgg.org>
 Title: Genomic Simulation for Validation Studies
-Version: 0.16.0
+Version: 0.17.0
 Depends: R (>= 3.5.0)
 Authors@R: person("Peter", "Sørensen", email = "peter.sorensen@r-qgg.org",
     role = c("aut", "cre"))
@@ -11,7 +11,9 @@ Description: Simulates genotype, pedigree, and phenotype data for validation
     studies. Supports independent simulated genotypes, caller-provided genotype
     matrices, optional qgg genotype-list objects, scalable multigenerational
     pedigrees, sparse scalar observation records, incomplete multitrait patterns,
-    and longitudinal random-regression workloads.
+    and longitudinal random-regression workloads. Provides composable selection,
+    mating, incremental packed cohorts, persistent genomic truth, correlated
+    phenotype records, representative sampling, and paired pool observations.
 License: GPL-3
 Suggests:
     qgg,

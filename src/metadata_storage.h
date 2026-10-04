@@ -48,9 +48,10 @@ class ValidatedVariantMetadata final {
 class ValidatedSampleMetadata final {
  public:
   explicit ValidatedSampleMetadata(
-      std::vector<SimulationSampleMetadata> records);
+      std::vector<SimulationSampleMetadata> records,
+      bool allow_external_parents = false);
   [[nodiscard]] static ValidatedSampleMetadata read_fam(
-      const std::string& path);
+      const std::string& path, bool allow_external_parents = false);
 
   [[nodiscard]] std::uint64_t size() const noexcept;
   [[nodiscard]] const std::vector<SimulationSampleMetadata>& records()

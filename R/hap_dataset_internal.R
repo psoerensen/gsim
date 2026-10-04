@@ -189,8 +189,8 @@
 
 .gsim_hap_dataset_create <- function(prefix,
                                      sample_metadata, overwrite = FALSE,
-                                     provenance = list()) {
-  samples <- .gsim_plink_validate_samples(sample_metadata)
+                                     provenance = list(), allow_external_parents = FALSE) {
+  samples <- .gsim_plink_validate_samples(sample_metadata, allow_external_parents)
   targets <- .gsim_hap_targets(prefix)
   overwrite <- .gsim_bed_sink_flag(overwrite, "overwrite")
   exists <- file.exists(targets)
@@ -369,7 +369,7 @@
     .gsim_stop("A complete HAP/BIM/FAM triplet is required.")
   }
   bim <- .Call(C_gsim_metadata_read_bim, enc2utf8(targets[["bim"]]))
-  fam <- .Call(C_gsim_metadata_read_fam, enc2utf8(targets[["fam"]]))
+  fam <- .Call(C_gsim_metadata_read_fam_external, enc2utf8(targets[["fam"]]))
   variants <- data.frame(
     chromosome = bim$chromosome, variant_id = bim$variant_id,
     genetic_position_cm = bim$genetic_position_cm,
