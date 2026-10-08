@@ -48,31 +48,14 @@ requires no downloads or qgg.
 
 ## Installation
 
-For development, open `gsim.Rproj` in RStudio. Use the Build pane to
-Install, Check or Document the package. Edit this README in `README.Rmd`
-and Knit to update `README.md`. The [website
-guide](https://github.com/psoerensen/gsim/blob/main/website/README.md)
-explains building the pkgdown site from the R console.
-
-Install the current release directly from GitHub with `remotes`:
+Install from GitHub:
 
 ``` r
+install.packages("remotes")  # Run once
 remotes::install_github("psoerensen/gsim")
 ```
 
-`remotes` is used only as an installation helper and is not a `gsim`
-package dependency. From a local checkout, the equivalent base-R command
-is:
-
-``` text
-R CMD INSTALL --preclean .
-```
-
-For RStudio development, open `gsim.Rproj` and use **Build \> Install**
-(or the Install button in the Build pane). The project is configured as
-an R package project and invokes base `R CMD INSTALL --preclean`; it
-does not require `devtools`, add RStudio as a package dependency, or
-include RStudio’s `.Rproj.user` state in Git or built source packages.
+On Windows, compiling gsim requires Rtools matching your R version.
 
 ## Examples
 
