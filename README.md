@@ -19,7 +19,7 @@ index](https://github.com/psoerensen/gsim/blob/main/docs/README.md) for
 scientific contracts, public API references, complete examples, and
 qualification evidence. The [website build
 guide](https://github.com/psoerensen/gsim/blob/main/website/README.md)
-explains local preview and the prepared manual GitHub Pages workflow.
+explains local preview and the prepared automatic GitHub Pages workflow.
 
 The simulator supports BayesC, BayesR, major-plus-polygenic,
 MAF-dependent, clustered, and fixed-effect architectures. It can

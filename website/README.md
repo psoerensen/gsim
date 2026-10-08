@@ -34,11 +34,14 @@ do not need a custom build.py or build.R, Python or Quarto.
 
 ## GitHub Pages
 
-`.github/workflows/pages.yml` builds and deploys this site only when manually
-dispatched on main. It prepares R website tools and Pandoc, renders without
-installing the package or running examples, and uploads only `website/_site/`.
-In repository Settings > Pages, select GitHub Actions. After committing and
-pushing reviewed changes, run **Publish documentation (manual)** from Actions.
-Ordinary pushes do not publish. This migration does not trigger deployment.
-The configured URL is <https://psoerensen.github.io/gsim/>; this is the
-intended destination, not evidence that a deployment is live.
+Every push to main automatically builds and publishes the website through
+`.github/workflows/pages.yml`. Edit in RStudio, Knit README.Rmd when it changes,
+then commit and push. Local website previews are optional. The workflow prepares
+R website tools and Pandoc, renders without installing the package or running
+examples, and uploads only `website/_site/`.
+
+In repository Settings > Pages, select GitHub Actions. The **Publish documentation**
+workflow also retains **Run workflow** for a manual rebuild on main. Environment
+protection rules, if configured in GitHub, still apply to deployment.
+The configured URL is <https://psoerensen.github.io/gsim/>. A successful
+Actions deployment establishes that the published site is available.

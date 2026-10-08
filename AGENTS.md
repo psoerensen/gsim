@@ -53,4 +53,5 @@ Follow [website/README.md](https://github.com/psoerensen/gsim/blob/main/website/
 Output stays in ignored website/_site; docs/man remain authoritative. Website
 builds must not execute scientific examples, benchmarks or biological downloads.
 Website-only article include chunks may read local public Markdown. No private
-repository is required. Commit, push and deployment require explicit instructions.
+repository is required. Commit and push require explicit instructions. The user has authorized automatic
+website deployment on pushes to main; retain the manual workflow option.

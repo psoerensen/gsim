@@ -25,7 +25,7 @@ native BED accumulation from an existing supported Glist does not require qgg.
 See the [documentation index](https://github.com/psoerensen/gsim/blob/main/docs/README.md) for scientific contracts, public
 API references, complete examples, and qualification evidence. The
 [website build guide](https://github.com/psoerensen/gsim/blob/main/website/README.md) explains local preview and the prepared
-manual GitHub Pages workflow.
+automatic GitHub Pages workflow.
 
 The simulator supports BayesC, BayesR, major-plus-polygenic, MAF-dependent,
 clustered, and fixed-effect architectures. It can simulate one or multiple
