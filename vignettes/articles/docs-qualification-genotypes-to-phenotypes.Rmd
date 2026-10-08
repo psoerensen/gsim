@@ -1,0 +1,9 @@
+---
+title: "Packed genotypes to phenotypes"
+output: html_document
+---
+
+```{r documentation, echo=FALSE, results="asis"}
+source("_include.R")
+cat(include_document("docs/qualification/genotypes_to_phenotypes.md"))
+```

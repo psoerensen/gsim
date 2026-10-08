@@ -1,0 +1,9 @@
+---
+title: "Marker-level pedigree meiosis qualification"
+output: html_document
+---
+
+```{r documentation, echo=FALSE, results="asis"}
+source("_include.R")
+cat(include_document("docs/qualification/pedigree_marker_meiosis.md"))
+```

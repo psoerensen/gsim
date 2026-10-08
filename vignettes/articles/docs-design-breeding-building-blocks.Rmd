@@ -1,0 +1,9 @@
+---
+title: "Composable breeding simulation"
+output: html_document
+---
+
+```{r documentation, echo=FALSE, results="asis"}
+source("_include.R")
+cat(include_document("docs/design/breeding_building_blocks.md"))
+```

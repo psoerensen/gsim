@@ -1,0 +1,60 @@
+llm-docs: false
+url: https://psoerensen.github.io/gsim/
+destination: website/_site
+template:
+  bootstrap: 5
+  bootswatch: flatly
+repo:
+  url:
+    home: https://github.com/psoerensen/gsim/
+    source: https://github.com/psoerensen/gsim/blob/main/
+    issue: https://github.com/psoerensen/gsim/issues/
+    user: https://github.com/
+articles:
+- title: Guides and development
+  contents:
+  - articles/docs-README
+  - articles/inst-COPYRIGHTS
+  - articles/website-README
+  - articles/website-examples
+- title: Scientific contracts
+  contents:
+  - articles/docs-design-breeding-building-blocks
+  - articles/docs-design-gene-sets
+  - articles/docs-design-hapnest-founder-model
+  - articles/docs-design-marker-specific-phenotype
+  - articles/docs-design-packed-chromosome-simulation
+  - articles/docs-design-pedigree-marker-meiosis
+  - articles/docs-design-vcf-compressed-import
+- title: Qualification evidence
+  contents:
+  - articles/docs-qualification-genotypes-to-phenotypes
+  - articles/docs-qualification-glist-bounded-accumulation
+  - articles/docs-qualification-hapnest-founder-chromosome-identity
+  - articles/docs-qualification-hapnest-founder-comparison
+  - articles/docs-qualification-parallel-founder-benchmark-chr22
+  - articles/docs-qualification-parallel-founder-scaling-diagnosis
+  - articles/docs-qualification-pedigree-marker-meiosis
+  - articles/docs-qualification-production-benchmark-chr22
+redirects:
+  - ["getting-started.html", "index.html"]
+  - ["contracts.html", "articles/docs-README.html"]
+  - ["validation.html", "articles/docs-README.html#qualification-and-reproducibility"]
+  - ["examples.html", "articles/website-examples.html"]
+  - ["attribution.html", "articles/inst-COPYRIGHTS.html"]
+  - ["contracts/breeding_building_blocks.html", "articles/docs-design-breeding-building-blocks.html"]
+  - ["contracts/gene_sets.html", "articles/docs-design-gene-sets.html"]
+  - ["contracts/hapnest_founder_model.html", "articles/docs-design-hapnest-founder-model.html"]
+  - ["contracts/marker_specific_phenotype.html", "articles/docs-design-marker-specific-phenotype.html"]
+  - ["contracts/packed_chromosome_simulation.html", "articles/docs-design-packed-chromosome-simulation.html"]
+  - ["contracts/pedigree_marker_meiosis.html", "articles/docs-design-pedigree-marker-meiosis.html"]
+  - ["contracts/vcf-compressed-import.html", "articles/docs-design-vcf-compressed-import.html"]
+  - ["evidence/genotypes_to_phenotypes.html", "articles/docs-qualification-genotypes-to-phenotypes.html"]
+  - ["evidence/glist_bounded_accumulation.html", "articles/docs-qualification-glist-bounded-accumulation.html"]
+  - ["evidence/hapnest_founder_chromosome_identity.html", "articles/docs-qualification-hapnest-founder-chromosome-identity.html"]
+  - ["evidence/hapnest_founder_comparison.html", "articles/docs-qualification-hapnest-founder-comparison.html"]
+  - ["evidence/parallel_founder_benchmark_chr22.html", "articles/docs-qualification-parallel-founder-benchmark-chr22.html"]
+  - ["evidence/parallel_founder_scaling_diagnosis.html", "articles/docs-qualification-parallel-founder-scaling-diagnosis.html"]
+  - ["evidence/pedigree_marker_meiosis.html", "articles/docs-qualification-pedigree-marker-meiosis.html"]
+  - ["evidence/production_benchmark_chr22.html", "articles/docs-qualification-production-benchmark-chr22.html"]
+  - ["AGENTS.html", "https://github.com/psoerensen/gsim/blob/main/AGENTS.md"]

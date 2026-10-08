@@ -1,0 +1,9 @@
+---
+title: "Production benchmark: 1000 Genomes chromosome 22"
+output: html_document
+---
+
+```{r documentation, echo=FALSE, results="asis"}
+source("_include.R")
+cat(include_document("docs/qualification/production_benchmark_chr22.md"))
+```

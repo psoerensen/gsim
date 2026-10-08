@@ -1,0 +1,9 @@
+---
+title: "Packed simulation workflow and native architecture"
+output: html_document
+---
+
+```{r documentation, echo=FALSE, results="asis"}
+source("_include.R")
+cat(include_document("docs/design/packed_chromosome_simulation.md"))
+```

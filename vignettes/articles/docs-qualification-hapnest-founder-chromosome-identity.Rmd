@@ -1,0 +1,9 @@
+---
+title: "Founder chromosome-identity qualification"
+output: html_document
+---
+
+```{r documentation, echo=FALSE, results="asis"}
+source("_include.R")
+cat(include_document("docs/qualification/hapnest_founder_chromosome_identity.md"))
+```

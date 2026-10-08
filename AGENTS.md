@@ -37,7 +37,7 @@ Rscript --vanilla -e "lib <- normalizePath('<isolated-library>', mustWork = TRUE
 ```
 
 This explicitly loads the newly installed package from the isolated library.
-See [docs/README.md](docs/README.md) for documentation and reproduction entry
+See [docs/README.md](https://github.com/psoerensen/gsim/blob/main/docs/README.md) for documentation and reproduction entry
 points. Generated `man/*.Rd` files name their roxygen source in `R/`; update
 those sources and regenerate with roxygen2 when such changes are authorized,
 never edit generated Rd by hand.
@@ -48,8 +48,9 @@ Preserve unrelated worktree changes. Keep seeded behavior reproducible and updat
 
 ## Website
 
-Follow [website/README.md](website/README.md). Build with
-`python website/build.py`; render only into ignored `website/_site/`, never
-into `docs/`. Scientific Markdown and public Rd remain authoritative. Website
-builds must not load gsim, execute examples or benchmarks, install dependencies,
-or require private repositories. Deployment stays manual-only until authorized.
+Follow [website/README.md](https://github.com/psoerensen/gsim/blob/main/website/README.md). Use the RStudio project and
+`pkgdown::build_site(examples = FALSE, install = FALSE)` from the package root.
+Output stays in ignored website/_site; docs/man remain authoritative. Website
+builds must not execute scientific examples, benchmarks or biological downloads.
+Website-only article include chunks may read local public Markdown. No private
+repository is required. Commit, push and deployment require explicit instructions.

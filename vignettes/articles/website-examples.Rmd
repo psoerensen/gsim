@@ -1,0 +1,9 @@
+---
+title: "Complete examples"
+output: html_document
+---
+
+```{r documentation, echo=FALSE, results="asis"}
+source("_include.R")
+cat(include_document("website/examples.md"))
+```

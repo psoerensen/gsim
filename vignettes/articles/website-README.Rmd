@@ -1,0 +1,9 @@
+---
+title: "RStudio development and package website"
+output: html_document
+---
+
+```{r documentation, echo=FALSE, results="asis"}
+source("_include.R")
+cat(include_document("website/README.md"))
+```

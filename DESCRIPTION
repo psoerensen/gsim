@@ -24,3 +24,5 @@ RoxygenNote: 7.3.3
 Encoding: UTF-8
 NeedsCompilation: yes
 SystemRequirements: C++17, zlib (provided by standard R build toolchains)
+URL: https://psoerensen.github.io/gsim/, https://github.com/psoerensen/gsim
+BugReports: https://github.com/psoerensen/gsim/issues

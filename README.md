@@ -1,67 +1,84 @@
+
+<!-- README.md is generated from README.Rmd. Please edit that file. -->
+
 # gsim
 
-`gsim` simulates genotypes, pedigrees, and genomic phenotypes for validation
-and methodological studies. Its standalone packed workflow imports phased VCF
-reference panels or opens HAP/BIM/FAM, samples unrelated synthetic founders
-using a HAPNEST-informed model, and transmits their chromosomes through a
-pedigree by Mendelian meiosis. Reusable phased HAP and unphased BED outputs
-connect genotype simulation to phenotype studies with exact marker-level truth.
-Phenotype inputs can also be independent binomial markers, a caller-provided
-matrix, or a qgg Glist. qgg is optional generally and supplies Glist construction;
-native BED accumulation from an existing supported Glist does not require qgg.
+`gsim` simulates genotypes, pedigrees, and genomic phenotypes for
+validation and methodological studies. Its standalone packed workflow
+imports phased VCF reference panels or opens HAP/BIM/FAM, samples
+unrelated synthetic founders using a HAPNEST-informed model, and
+transmits their chromosomes through a pedigree by Mendelian meiosis.
+Reusable phased HAP and unphased BED outputs connect genotype simulation
+to phenotype studies with exact marker-level truth. Phenotype inputs can
+also be independent binomial markers, a caller-provided matrix, or a qgg
+Glist. qgg is optional generally and supplies Glist construction; native
+BED accumulation from an existing supported Glist does not require qgg.
 
-See the [documentation index](docs/README.md) for scientific contracts, public
-API references, complete examples, and qualification evidence. The
-[website build guide](website/README.md) explains local preview and the prepared
-manual GitHub Pages workflow.
+See the [documentation
+index](https://github.com/psoerensen/gsim/blob/main/docs/README.md) for
+scientific contracts, public API references, complete examples, and
+qualification evidence. The [website build
+guide](https://github.com/psoerensen/gsim/blob/main/website/README.md)
+explains local preview and the prepared manual GitHub Pages workflow.
 
-The simulator supports BayesC, BayesR, major-plus-polygenic, MAF-dependent,
-clustered, and fixed-effect architectures. It can simulate one or multiple
-traits, annotation-informed component probabilities, direct marker-specific
-causal probabilities, and marker-specific active-effect variance weights.
-Optional marginal summary statistics can be generated from the same simulated
-phenotype.
+The simulator supports BayesC, BayesR, major-plus-polygenic,
+MAF-dependent, clustered, and fixed-effect architectures. It can
+simulate one or multiple traits, annotation-informed component
+probabilities, direct marker-specific causal probabilities, and
+marker-specific active-effect variance weights. Optional marginal
+summary statistics can be generated from the same simulated phenotype.
 
-Returned objects include phenotype, genetic and residual components, exact
-marker effects and states, causal markers, probability surfaces, targets,
-realized quantities, and settings/provenance used to generate the data. These
-outputs are intended to make validation studies directly auditable.
+Returned objects include phenotype, genetic and residual components,
+exact marker effects and states, causal markers, probability surfaces,
+targets, realized quantities, and settings/provenance used to generate
+the data. These outputs are intended to make validation studies directly
+auditable.
 
-Composable [breeding simulation building blocks](docs/design/breeding_building_blocks.md)
-support externally scored or random parent selection, mating, incremental
-packed offspring cohorts, fixed marker-effect/base state, genomic single-trait,
-multitrait and longitudinal records, representative sampling with parent
-retention, and paired pooled observations. Computation uses the native backend;
-R supplies contracts and orchestration. Prediction and model fitting remain
-external. The [local example](inst/examples/breeding_building_blocks.R) requires
-no downloads or qgg.
+Composable [breeding simulation building
+blocks](https://github.com/psoerensen/gsim/blob/main/docs/design/breeding_building_blocks.md)
+support externally scored or random parent selection, mating,
+incremental packed offspring cohorts, fixed marker-effect/base state,
+genomic single-trait, multitrait and longitudinal records,
+representative sampling with parent retention, and paired pooled
+observations. Computation uses the native backend; R supplies contracts
+and orchestration. Prediction and model fitting remain external. The
+[local
+example](https://github.com/psoerensen/gsim/blob/main/inst/examples/breeding_building_blocks.R)
+requires no downloads or qgg.
 
 ## Installation
 
+For development, open `gsim.Rproj` in RStudio. Use the Build pane to
+Install, Check or Document the package. Edit this README in `README.Rmd`
+and Knit to update `README.md`. The [website
+guide](https://github.com/psoerensen/gsim/blob/main/website/README.md)
+explains building the pkgdown site from the R console.
+
 Install the current release directly from GitHub with `remotes`:
 
-```r
+``` r
 remotes::install_github("psoerensen/gsim")
 ```
 
-`remotes` is used only as an installation helper and is not a `gsim` package
-dependency. From a local checkout, the equivalent base-R command is:
+`remotes` is used only as an installation helper and is not a `gsim`
+package dependency. From a local checkout, the equivalent base-R command
+is:
 
-```text
+``` text
 R CMD INSTALL --preclean .
 ```
 
-For RStudio development, open `gsim.Rproj` and use **Build > Install** (or the
-Install button in the Build pane). The project is configured as an R package
-project and invokes base `R CMD INSTALL --preclean`; it does not require
-`devtools`, add RStudio as a package dependency, or include RStudio's
-`.Rproj.user` state in Git or built source packages.
+For RStudio development, open `gsim.Rproj` and use **Build \> Install**
+(or the Install button in the Build pane). The project is configured as
+an R package project and invokes base `R CMD INSTALL --preclean`; it
+does not require `devtools`, add RStudio as a package dependency, or
+include RStudio’s `.Rproj.user` state in Git or built source packages.
 
 ## Examples
 
 Simulate genotypes and a phenotype:
 
-```r
+``` r
 library(gsim)
 
 sim <- gsim(n = 200, m = 500, n_causal = 20, seed = 1)
@@ -70,17 +87,17 @@ sim
 
 Simulate from a caller-provided genotype matrix:
 
-```r
+``` r
 W <- matrix(rbinom(150 * 100, size = 2, prob = 0.3), 150, 100)
 colnames(W) <- paste0("m", seq_len(ncol(W)))
 sim <- gsim(W = W, architecture = "bayesr", n_causal = 10, seed = 2)
 ```
 
-Membership and active-effect variance can be specified independently. A direct
-probability is a Bernoulli non-null probability; a multiplier is a relative
-active-effect variance weight:
+Membership and active-effect variance can be specified independently. A
+direct probability is a Bernoulli non-null probability; a multiplier is
+a relative active-effect variance weight:
 
-```r
+``` r
 marker_ids <- colnames(W)
 q <- setNames(seq(0.02, 0.20, length.out = length(marker_ids)), marker_ids)
 w <- setNames(exp(seq(-0.5, 0.5, length.out = length(marker_ids))), marker_ids)
@@ -90,16 +107,17 @@ sim <- gsim(
 )
 ```
 
-BED-backed qgg Glist inputs are supported; qgg supplies `gprep()` for preparation. Scientific
-validation studies remain in packages such as `sblrbench`; they are not bundled
-with `gsim`.
+BED-backed qgg Glist inputs are supported; qgg supplies `gprep()` for
+preparation. Scientific validation studies remain in packages such as
+`sblrbench`; they are not bundled with `gsim`.
 
-When a Glist contains `maf` and `ldscores` metadata, conditional effect-variance
-weights can be derived without loading the complete genotype matrix. The scalar
-annotation score is separate from the SBayesRC annotation matrix `A`.
-This workflow sketch requires a prepared `Glist` with aligned metadata:
+When a Glist contains `maf` and `ldscores` metadata, conditional
+effect-variance weights can be derived without loading the complete
+genotype matrix. The scalar annotation score is separate from the
+SBayesRC annotation matrix `A`. This workflow sketch requires a prepared
+`Glist` with aligned metadata:
 
-```r
+``` r
 marker_ids <- as.character(unlist(Glist$rsidsLD, use.names = FALSE))
 q <- setNames(rep(0.05, length(marker_ids)), marker_ids)
 s <- setNames(rep(1, length(marker_ids)), marker_ids)
@@ -111,21 +129,23 @@ sim <- gsim(
 )
 ```
 
-This illustrates a HAPNEST-like variance parameterization, not a separate
-architecture or a recommended universal default. `causal_probability` controls
-non-null membership; active mixture proportions remain conditional on `pi`;
-`a`, `b`, `c`, and `annotation_score` control variance only after a marker is
-causal. Effects scale by the square root of the resulting variance weight.
+This illustrates a HAPNEST-like variance parameterization, not a
+separate architecture or a recommended universal default.
+`causal_probability` controls non-null membership; active mixture
+proportions remain conditional on `pi`; `a`, `b`, `c`, and
+`annotation_score` control variance only after a marker is causal.
+Effects scale by the square root of the resulting variance weight.
 
 ## Packed reference workflow
 
-The supported packed workflow explicitly separates a real reference panel, an
-unrelated synthetic base population, and its Mendelian pedigree descendants.
-The packed genotype stages never construct a dense whole-genome allele or
-genotype matrix. This workflow sketch requires a VCF, genetic map, named model
-inputs, and a pedigree whose founder IDs match the generated base IDs:
+The supported packed workflow explicitly separates a real reference
+panel, an unrelated synthetic base population, and its Mendelian
+pedigree descendants. The packed genotype stages never construct a dense
+whole-genome allele or genotype matrix. This workflow sketch requires a
+VCF, genetic map, named model inputs, and a pedigree whose founder IDs
+match the generated base IDs:
 
-```r
+``` r
 reference <- gsim_import_vcf("reference.vcf.gz", genetic_map, "reference")
 base <- gsim_simulate_founders(
   reference, n = 10000, populations = populations,
@@ -138,32 +158,36 @@ result <- gsim_simulate_pedigree(
 )
 ```
 
-All packed storage, VCF parsing, and dataset writing code is compiled directly
-into `gsim`; no sibling packages, shared-library paths, or environment variables
-are required. VCF REF is bit 0/BIM A2, ALT is bit 1/BIM A1, and phased GT
-left/right order is retained as H1/H2. The importer
-retains complete phased diploid GT at uppercase biallelic A/C/G/T SNPs.
-Unsupported biological records may be counted and skipped. A sparse physical
-map supplies cumulative cM knots, with deterministic interpolation and no
-extrapolation. Founder batches are aligned to 64-sample packed words and written
-directly into final marker-major HAP positions. Static native workers own
-disjoint output words, so batch size and thread scheduling do not change output.
-The founder seed affects only the base population; the pedigree seed affects
-only meiosis. HAP retains phase and is reusable across pedigree runs, while BED
-is an unphased dosage output. Pedigree meiosis remains single-threaded because
-parents and children can occupy the same mutable packed word.
+All packed storage, VCF parsing, and dataset writing code is compiled
+directly into `gsim`; no sibling packages, shared-library paths, or
+environment variables are required. VCF REF is bit 0/BIM A2, ALT is bit
+1/BIM A1, and phased GT left/right order is retained as H1/H2. The
+importer retains complete phased diploid GT at uppercase biallelic
+A/C/G/T SNPs. Unsupported biological records may be counted and skipped.
+A sparse physical map supplies cumulative cM knots, with deterministic
+interpolation and no extrapolation. Founder batches are aligned to
+64-sample packed words and written directly into final marker-major HAP
+positions. Static native workers own disjoint output words, so batch
+size and thread scheduling do not change output. The founder seed
+affects only the base population; the pedigree seed affects only
+meiosis. HAP retains phase and is reusable across pedigree runs, while
+BED is an unphased dosage output. Pedigree meiosis remains
+single-threaded because parents and children can occupy the same mutable
+packed word.
 
-See [the direct 1000 Genomes chromosome 22 example](inst/examples/1000G_chr22.R)
+See [the direct 1000 Genomes chromosome 22
+example](https://github.com/psoerensen/gsim/blob/main/inst/examples/1000G_chr22.R)
 for an internet-enabled GRCh37 workflow using the official approximately
 196 MB IGSR VCF directly, without bcftools or htslib.
 
 ## Genotypes to phenotypes
 
-Packed simulation output can enter the existing phenotype engine without a new
-adapter. This workflow sketch requires prepared reference and pedigree inputs;
-`...` stands for required founder-model arguments, not runnable R code:
+Packed simulation output can enter the existing phenotype engine without
+a new adapter. This workflow sketch requires prepared reference and
+pedigree inputs; `...` stands for required founder-model arguments, not
+runnable R code:
 
-```r
+``` r
 reference <- gsim_reference("reference")
 base <- gsim_simulate_founders(reference, ..., output = "base")
 pedigree_bed <- gsim_simulate_pedigree(
@@ -178,60 +202,68 @@ Glist <- qgg::gprep(
 phenotype <- gsim(Glist = Glist, n_causal = 20, seed = 3)
 ```
 
-BED dosage is H1 + H2, BIM order becomes `Glist$rsids`, FAM order becomes
-`Glist$ids`, and `gprep()` supplies `Glist$maf`. LD scores must be prepared by
-the established Glist workflow or supplied as a complete named vector. During
-phenotype simulation, gsim selects causal markers first, computes statistics in
-blocks of at most `min(chunk_size, 64)` columns, and accumulates all traits
-natively from packed BED records. It never materializes an individuals by
-all-causal-markers matrix. Optional summary statistics scan all eligible markers
-with the same cap. qgg is needed for `gprep()` construction, not accumulation
-from an existing supported BED-backed Glist. HAP phenotype input and compatibility
-with gsuite-generated Glist objects are not established.
+BED dosage is H1 + H2, BIM order becomes `Glist$rsids`, FAM order
+becomes `Glist$ids`, and `gprep()` supplies `Glist$maf`. LD scores must
+be prepared by the established Glist workflow or supplied as a complete
+named vector. During phenotype simulation, gsim selects causal markers
+first, computes statistics in blocks of at most `min(chunk_size, 64)`
+columns, and accumulates all traits natively from packed BED records. It
+never materializes an individuals by all-causal-markers matrix. Optional
+summary statistics scan all eligible markers with the same cap. qgg is
+needed for `gprep()` construction, not accumulation from an existing
+supported BED-backed Glist. HAP phenotype input and compatibility with
+gsuite-generated Glist objects are not established.
 
-Missing dosages use selected-sample means; optional standardization uses the
-selected-sample SD after imputation, preserving the phenotype model. Transient
-decoded blocks cost O(n ? block size); outputs cost O(n ? traits). Full returned
-marker effects, probability surfaces, metadata, annotations and optional summary
-tables still grow with marker count. `return_genotypes = TRUE` is rejected for
-Glist input; explicit in-memory `W` retains that option. See the
-[phenotype contract](docs/design/marker_specific_phenotype.md#bounded-bed-accumulation)
-and [bounded qualification](docs/qualification/glist_bounded_accumulation.md).
+Missing dosages use selected-sample means; optional standardization uses
+the selected-sample SD after imputation, preserving the phenotype model.
+Transient decoded blocks cost O(n ? block size); outputs cost O(n ?
+traits). Full returned marker effects, probability surfaces, metadata,
+annotations and optional summary tables still grow with marker count.
+`return_genotypes = TRUE` is rejected for Glist input; explicit
+in-memory `W` retains that option. See the [phenotype
+contract](https://github.com/psoerensen/gsim/blob/main/docs/design/marker_specific_phenotype.md#bounded-bed-accumulation)
+and [bounded
+qualification](https://github.com/psoerensen/gsim/blob/main/docs/qualification/glist_bounded_accumulation.md).
 
-The three marker-level controls are distinct: `q_j` is causal probability,
-active `pi_k` values are conditional mixture proportions, and `w_j` is the
-conditional effect-variance multiplier. See the
-[complete local-data example](inst/examples/end_to_end_phenotype.R)
-(run after `library(gsim)`, with qgg installed) and the
-[qualification contract](docs/qualification/genotypes_to_phenotypes.md) for the
-default, causal-probability, variance-weight, and combined configurations.
+The three marker-level controls are distinct: `q_j` is causal
+probability, active `pi_k` values are conditional mixture proportions,
+and `w_j` is the conditional effect-variance multiplier. See the
+[complete local-data
+example](https://github.com/psoerensen/gsim/blob/main/inst/examples/end_to_end_phenotype.R)
+(run after `library(gsim)`, with qgg installed) and the [qualification
+contract](https://github.com/psoerensen/gsim/blob/main/docs/qualification/genotypes_to_phenotypes.md)
+for the default, causal-probability, variance-weight, and combined
+configurations.
 
 ## Pedigree and record workloads
 
-`gsim_pedigree()` creates scalable multigenerational pedigree domains with
-restricted sire and dam pools, overlapping generations, missing parents, later
-founders, deliberately unphenotyped animals, and separate canonical and external
-orders. Parent-before-offspring ordering is explicit in `canonical_order`; the
-returned pedigree table uses the reproducibly arbitrary `external_order`.
+`gsim_pedigree()` creates scalable multigenerational pedigree domains
+with restricted sire and dam pools, overlapping generations, missing
+parents, later founders, deliberately unphenotyped animals, and separate
+canonical and external orders. Parent-before-offspring ordering is
+explicit in `canonical_order`; the returned pedigree table uses the
+reproducibly arbitrary `external_order`.
 
-`gsim_pedigree_records()` turns one pedigree into one selected model view:
-single-trait, two-trait with incomplete observation patterns, or irregular
-longitudinal random regression. Every observed phenotype is one scalar row.
-Missing traits and times are absent records, not imputed values. The fixed design
-is a sorted one-based triplet list (`row`, `column`, `value`) with four stored
-entries per observation, so no large dense incidence matrix is returned.
+`gsim_pedigree_records()` turns one pedigree into one selected model
+view: single-trait, two-trait with incomplete observation patterns, or
+irregular longitudinal random regression. Every observed phenotype is
+one scalar row. Missing traits and times are absent records, not imputed
+values. The fixed design is a sorted one-based triplet list (`row`,
+`column`, `value`) with four stored entries per observation, so no large
+dense incidence matrix is returned.
 
-Longitudinal views store a basis row aligned with every observed record. Optional
-prediction records provide animal, new time, basis, and fitted truth without an
-observed residual or phenotype.
+Longitudinal views store a basis row aligned with every observed record.
+Optional prediction records provide animal, new time, basis, and fitted
+truth without an observed residual or phenotype.
 
-The pedigree latent values are deterministic solver-workload values formed by a
-scalable parent-average recursion. They are not an inbreeding-aware exact draw
-from a numerator-relationship covariance, and covariance recovery is therefore
-not a validation target. Their purpose is to supply identical model inputs and
-right-hand sides for sparse solver parity studies.
+The pedigree latent values are deterministic solver-workload values
+formed by a scalable parent-average recursion. They are not an
+inbreeding-aware exact draw from a numerator-relationship covariance,
+and covariance recovery is therefore not a validation target. Their
+purpose is to supply identical model inputs and right-hand sides for
+sparse solver parity studies.
 
-```r
+``` r
 ped <- gsim_pedigree(
   n_generations = 5, animals_per_generation = 40,
   sires_per_generation = 6, dams_per_generation = 12, seed = 10
@@ -241,36 +273,44 @@ long <- gsim_pedigree_records(
 )
 ```
 
-The non-test script `tools/qualification/pedigree_solver_workload.R` contains the
-fixed 50,000-animal construction qualification. It prints counts, dimensions,
-object sizes, elapsed construction times, and deterministic checksums, produces
-no permanent output by default, and is never run by `R CMD check`.
+The non-test script `tools/qualification/pedigree_solver_workload.R`
+contains the fixed 50,000-animal construction qualification. It prints
+counts, dimensions, object sizes, elapsed construction times, and
+deterministic checksums, produces no permanent output by default, and is
+never run by `R CMD check`.
 
 ## Provenance
 
 The initial implementation was extracted from `sblr` commit
 `e9532f8b852f973f34f531a1cc9101da75e1f0ad`, using `R/gsim.R`,
-`R/gsim_internal.R`, and `tests/testthat/test-gsim.R` as the canonical source
-paths.
+`R/gsim_internal.R`, and `tests/testthat/test-gsim.R` as the canonical
+source paths.
 
-HAPNEST scientific attribution and gbits/gmat component provenance are retained
-in the [packed workflow guide](docs/design/packed_chromosome_simulation.md) and
-the applicable [copyright and license notices](inst/COPYRIGHTS).
+HAPNEST scientific attribution and gbits/gmat component provenance are
+retained in the [packed workflow
+guide](https://github.com/psoerensen/gsim/blob/main/docs/design/packed_chromosome_simulation.md)
+and the applicable [copyright and license
+notices](https://github.com/psoerensen/gsim/blob/main/inst/COPYRIGHTS).
 
 ## Controlled gene sets
 
-`gsim_gene_sets()` constructs gene sets conditional on known causal SNP IDs,
-usually `simulation$causal_rsids`, and a supplied SNP?gene mapping. Paired total
-and causal gene counts define scenarios; replicates reuse the pools, allowing
-natural overlap and zero-causal controls. It returns exact composition truth,
-not enrichment calls, and never modifies SNP effects. Genes without mapped SNPs
-are outside the initial interface. See the
-[scientific contract](docs/design/gene_sets.md) and the
-[short runnable example](inst/examples/gene_sets.R), which uses only synthetic
-local inputs. Substitute your own two-column `snp`/`gene` mapping for real data.
+`gsim_gene_sets()` constructs gene sets conditional on known causal SNP
+IDs, usually `simulation$causal_rsids`, and a supplied SNP?gene mapping.
+Paired total and causal gene counts define scenarios; replicates reuse
+the pools, allowing natural overlap and zero-causal controls. It returns
+exact composition truth, not enrichment calls, and never modifies SNP
+effects. Genes without mapped SNPs are outside the initial interface.
+See the [scientific
+contract](https://github.com/psoerensen/gsim/blob/main/docs/design/gene_sets.md)
+and the [short runnable
+example](https://github.com/psoerensen/gsim/blob/main/inst/examples/gene_sets.R),
+which uses only synthetic local inputs. Substitute your own two-column
+`snp`/`gene` mapping for real data.
 
 ## License
 
-The project is licensed under the [GNU General Public License version 3 only](LICENSE)
-(SPDX: `GPL-3.0-only`; R DESCRIPTION: `GPL-3`). Existing third-party notices
-and component provenance remain in [inst/COPYRIGHTS](inst/COPYRIGHTS).
+The project is licensed under the [GNU General Public License version 3
+only](https://github.com/psoerensen/gsim/blob/main/LICENSE) (SPDX:
+`GPL-3.0-only`; R DESCRIPTION: `GPL-3`). Existing third-party notices
+and component provenance remain in
+[inst/COPYRIGHTS](https://github.com/psoerensen/gsim/blob/main/inst/COPYRIGHTS).
