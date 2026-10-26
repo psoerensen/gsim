@@ -55,3 +55,12 @@ builds must not execute scientific examples, benchmarks or biological downloads.
 Website-only article include chunks may read local public Markdown. No private
 repository is required. Commit and push require explicit instructions. The user has authorized automatic
 website deployment on pushes to main; retain the manual workflow option.
+
+## Documentation and capability status
+
+At each implementation milestone, assess documentation impact and update affected
+simulation contracts, public API documentation and applicable existing qualification
+records. Distinguish implementation, validation, qualification scope and release
+status. Scientific validation remains specific to the simulation model; reproducible
+seeds or byte parity alone do not establish biological realism or fitted-method
+calibration. Preserve existing evidence and generation conventions.
