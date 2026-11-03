@@ -84,3 +84,12 @@ solver performance. Current [tests](../tests/testthat.R), both examples, and all
 benchmark/qualification scripts remain available. Benchmarks and broad
 qualification require authorization; nothing in this index claims they were
 rerun during documentation cleanup.
+
+## Experimental healthcare benchmark helper
+
+The [healthcare trajectory simulator](design/healthcare_history_simulation.md)
+adds continuous event ages, correlated diagnosis histories, interaction/order
+scenarios, observation windows and independent dropout. It is a development
+source helper, not an exported installed R API or a clinically calibrated model.
+The first 10,000-patient/128-code export passed focused data/feature checks;
+no fitted-method comparison or package/release qualification is implied.
