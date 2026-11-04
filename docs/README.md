@@ -6,6 +6,10 @@ the versions, fixtures, and limits of their original measurements.
 
 ## Authoritative contracts
 
+- [Dominance, environmental interactions and offspring mutation](design/genetic_extensions.md): explicit diploid effect units, persistent truth, record environments and reproducible allele flips.
+
+- [Breed-origin simulation](design/boa_simulation.md): phased pedigree inheritance, frozen correlated breed SNP effects, reference-breed LBP and separate genetic truth.
+
 - [Breeding simulation building blocks](design/breeding_building_blocks.md):
   supplied parentage, selection, mating, incremental packed cohorts, persistent
   genomic truth, correlated records, sampling and weighted pools with overlap
@@ -69,6 +73,7 @@ Reports retain the scope and revision of their own qualification. Historical rec
 
 | Evidence | Scope and reproduction |
 | --- | --- |
+| [Genetic extensions](qualification/genetic_extensions.md) | Dominance, environmental interactions and offspring mutation; 800 focused assertions plus the local example, followed by full R CMD check with 1,643 passing assertions, zero errors/warnings and one existing license-file note. |
 | [Bounded Glist accumulation](qualification/glist_bounded_accumulation.md) | 0.15.0 focused parity, malformed-input and bounded resource checks; [script](../tools/qualification/glist_streaming.R). |
 | [Genotypes to phenotypes](qualification/genotypes_to_phenotypes.md) | Small local fixture, qgg dosage/ID parity and phenotype controls; [example](../inst/examples/end_to_end_phenotype.R) and [test](../tests/testthat/test-end-to-end-phenotype.R). |
 | [Founder chromosome identity](qualification/hapnest_founder_chromosome_identity.md) | Exact byte/audit comparisons and intentional replacement of block-index streams; [tests](../tests/testthat/test-hapnest-founders.R). |

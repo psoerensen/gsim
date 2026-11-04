@@ -2,6 +2,9 @@
 
 S3method(print,gsim)
 export(gsim)
+export(gsim_boa_genotypes)
+export(gsim_boa_trait_state)
+export(gsim_boa_values)
 export(gsim_gene_sets)
 export(gsim_genetic_values)
 export(gsim_import_vcf)

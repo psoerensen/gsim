@@ -11,7 +11,9 @@ gsim_records(
   fixed = 0,
   residual_covariance = 1,
   permanent_covariance = NULL,
-  seed = 1
+  seed = 1,
+  interaction_values = NULL,
+  environment = NULL
 )
 }
 \arguments{
@@ -32,6 +34,12 @@ longitudinal basis rows. Default uses the record's trait column.}
 Residuals are shared within observation units; permanent effects within animals.}
 
 \item{seed}{Nonnegative seed for separate identity-keyed residual and permanent streams.}
+
+\item{interaction_values}{Optional animal-by-genetic-column slope matrix,
+with the same identities as genetic_values. Added through genetic_design.}
+
+\item{environment}{Finite scalar or record-named covariate. Required with
+interaction_values. No environmental main effect is added implicitly.}
 }
 \value{
 List with observable \code{records}, separate simulation \code{truth}, and a

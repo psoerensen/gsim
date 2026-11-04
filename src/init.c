@@ -72,7 +72,14 @@ extern SEXP C_gsim_breeding_normalize(SEXP, SEXP, SEXP);
 extern SEXP C_gsim_breeding_pool_bed(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
 extern SEXP C_gsim_breeding_pool_covariance(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
 
+extern SEXP C_gsim_boa_values(SEXP,SEXP,SEXP,SEXP,SEXP,SEXP,SEXP,SEXP);
+
+extern SEXP C_gsim_bed_dominance(SEXP,SEXP,SEXP,SEXP,SEXP,SEXP,SEXP);
+extern SEXP C_gsim_packed_mutate(SEXP,SEXP,SEXP,SEXP,SEXP,SEXP,SEXP);
 static const R_CallMethodDef call_methods[] = {
+    {"C_gsim_bed_dominance", (DL_FUNC) &C_gsim_bed_dominance, 7},
+    {"C_gsim_packed_mutate", (DL_FUNC) &C_gsim_packed_mutate, 7},
+    {"C_gsim_boa_values", (DL_FUNC) &C_gsim_boa_values, 8},
     {"C_gsim_breeding_checksum", (DL_FUNC) &C_gsim_breeding_checksum, 1},
     {"C_gsim_metadata_sample_create_external", (DL_FUNC) &C_gsim_metadata_sample_create_external, 5},
     {"C_gsim_metadata_read_fam_external", (DL_FUNC) &C_gsim_metadata_read_fam_external, 1},

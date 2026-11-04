@@ -4,7 +4,7 @@
 \alias{gsim_simulate_cohort}
 \title{Generate one cohort from already simulated phased parents}
 \usage{
-gsim_simulate_cohort(parents, offspring, seed, output)
+gsim_simulate_cohort(parents, offspring, seed, output, mutation_rate = 0)
 }
 \arguments{
 \item{parents}{Phased dataset prefix, phased manifest, or \code{gsim_cohort}.
@@ -17,6 +17,9 @@ sex and cohort labels; alternatively the result of \code{\link[=gsim_mate]{gsim_
 
 \item{output}{New directory for the cohort's \code{phase} and \code{dosage} triplets.
 Existing directories are refused, including after a partial publication.}
+
+\item{mutation_rate}{Per-marker, per-gamete allele-flip probability between zero and one.
+Mutation uses a separate identity-keyed stream after recombination.}
 }
 \value{
 \code{gsim_cohort} with HAP/BED manifests, offspring metadata, actual

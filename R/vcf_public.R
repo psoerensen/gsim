@@ -319,8 +319,9 @@ gsim_simulate_founders <- function(
 
 .gsim_simulate_pedigree_impl <- function(
   founders, pedigree, seed, output, format = c("hap", "bed"),
-  overwrite = FALSE, return_crossovers = FALSE
+  overwrite = FALSE, return_crossovers = FALSE, mutation_rate = 0
 ) {
+  mutation_rate <- .gsim_mutation_rate(mutation_rate)
   format <- match.arg(format)
   founders <- .gsim_public_phased_input(founders, "founders")
   if (!inherits(pedigree, "gsim_pedigree")) {
@@ -351,7 +352,7 @@ gsim_simulate_founders <- function(
     founders = reader$paths,
     pedigree_model = "chromosome-wise Poisson no-interference meiosis",
     meiosis_map_conversion = "BIM cumulative cM divided by 100 to Morgans",
-    seed = seed, output_format = format
+    seed = seed, mutation_rate = mutation_rate, output_format = format
   )
   sink <- if (format == "hap") {
     .gsim_hap_dataset_create(output, sample_metadata, overwrite, provenance)
@@ -382,7 +383,7 @@ gsim_simulate_founders <- function(
       rep.int(chromosome, nrow(variants)),
       variants$genetic_position_cm / 100, seed,
       return_haplotypes = TRUE, return_genotypes = FALSE,
-      return_crossovers = return_crossovers
+      return_crossovers = return_crossovers, mutation_rate = mutation_rate
     )
     on.exit({
       try(.gsim_packed_close(descendants$h1), silent = TRUE)
@@ -414,7 +415,7 @@ gsim_simulate_founders <- function(
     dense_genotype_matrix_allocated = FALSE,
     genetic_position = list(stored_map = "cumulative cM",
                             meiosis = "cumulative Morgans = BIM cM / 100"),
-    rng = "SplitMix64; R global RNG unused", seed = seed, threads = 1L,
+    rng = "SplitMix64; R global RNG unused", seed = seed, mutation_rate = mutation_rate, threads = 1L,
     parallelism = paste(
       "single-threaded: generations are dependent and marker-major packed",
       "words can contain both parents and children"
@@ -435,6 +436,9 @@ gsim_simulate_founders <- function(
 #'   Its FAM IDs must exactly equal the pedigree founder IDs.
 #' @param pedigree A [gsim_pedigree()] object with parent-before-offspring order.
 #' @param seed Pedigree-meiosis seed; it cannot alter the stored founders.
+#' @param mutation_rate Per-marker, per-transmitted-copy probability of flipping
+#'   the inherited allele. Independent identity-keyed stream; founders and
+#'   crossover plans are unchanged. Default zero preserves existing simulations.
 #' @param output Extension-free output prefix.
 #' @param format `"hap"` for reusable phased HAP/BIM/FAM or `"bed"` for
 #'   unphased dosage BED/BIM/FAM.
@@ -451,9 +455,9 @@ gsim_simulate_founders <- function(
 #' with their parents.
 gsim_simulate_pedigree <- function(
   founders, pedigree, seed, output, format = c("hap", "bed"),
-  overwrite = FALSE
+  overwrite = FALSE, mutation_rate = 0
 ) {
   .gsim_simulate_pedigree_impl(
-    founders, pedigree, seed, output, format, overwrite, FALSE
+    founders, pedigree, seed, output, format, overwrite, FALSE, mutation_rate
   )
 }

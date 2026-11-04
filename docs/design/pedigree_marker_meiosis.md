@@ -10,7 +10,8 @@ and mutation-age filtering.  The latter transmits one recombinant copy of each
 known parent's two chromosomes to a child.  None of the HAPNEST demographic or
 mutation parameters participates in pedigree meiosis.
 
-Offspring mutation, gene conversion, segregation distortion, crossover
+Optional [offspring mutation](genetic_extensions.md) uses a separate allele-flip
+stream after transmission. Gene conversion, segregation distortion, crossover
 interference, sex-specific maps, and pedigree inbreeding adjustments are not
 part of the supported model.
 

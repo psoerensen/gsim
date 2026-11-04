@@ -10,7 +10,8 @@ gsim_simulate_pedigree(
   seed,
   output,
   format = c("hap", "bed"),
-  overwrite = FALSE
+  overwrite = FALSE,
+  mutation_rate = 0
 )
 }
 \arguments{
@@ -27,6 +28,10 @@ Its FAM IDs must exactly equal the pedigree founder IDs.}
 unphased dosage BED/BIM/FAM.}
 
 \item{overwrite}{Whether to replace an existing complete triplet.}
+
+\item{mutation_rate}{Per-marker, per-transmitted-copy probability of flipping
+the inherited allele. Independent identity-keyed stream; founders and
+crossover plans are unchanged. Default zero preserves existing simulations.}
 }
 \value{
 A compact output manifest; no dense biological matrix is returned.

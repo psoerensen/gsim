@@ -4,7 +4,7 @@
 \alias{gsim_genetic_values}
 \title{Apply persistent genomic truth to a BED cohort}
 \usage{
-gsim_genetic_values(genotypes, state, ids = NULL)
+gsim_genetic_values(genotypes, state, ids = NULL, environment = NULL)
 }
 \arguments{
 \item{genotypes}{BED prefix, BED manifest, or \code{gsim_cohort}.}
@@ -12,6 +12,9 @@ gsim_genetic_values(genotypes, state, ids = NULL)
 \item{state}{A persistent \code{gsim_trait_state}.}
 
 \item{ids}{Optional unique sample IDs, in desired result order.}
+
+\item{environment}{Finite scalar or sample-named environmental covariate.
+Required when the state has interaction effects.}
 }
 \value{
 Animal-by-trait genomic values accumulated natively from packed BED.

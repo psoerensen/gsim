@@ -276,3 +276,19 @@ local inputs. Substitute your own two-column `snp`/`gene` mapping for real data.
 The project is licensed under the [GNU General Public License version 3 only](https://github.com/psoerensen/gsim/blob/main/LICENSE)
 (SPDX: `GPL-3.0-only`; R DESCRIPTION: `GPL-3`). Existing third-party notices
 and component provenance remain in [inst/COPYRIGHTS](https://github.com/psoerensen/gsim/blob/main/inst/COPYRIGHTS).
+
+
+## Breed-origin simulation
+
+`gsim_boa_genotypes()` propagates phased alleles and known breed origins through a supplied pedigree. `gsim_boa_trait_state()` freezes correlated breed/channel SNP effects, disjoint marker components and reference-breed LBP effects; `gsim_boa_values()` returns separate breed, SNP and LBP truth for `gsim_records()`. Founder frequencies and marker effects remain fixed across generations. See the [simulation contract](docs/design/boa_simulation.md) for limits and the structured three-breed pilot. BOA fitting stays in the standalone model workflow.
+
+## Dominance, environments and offspring mutation
+
+`gsim()` accepts marker-named `dominance` effects on heterozygosity and
+`interaction` effects on raw dosage multiplied by a supplied `environment`.
+It returns separate genetic truth components. Persistent trait states and
+record-specific environments support comparisons across cohorts and visits.
+Pedigree, incremental cohort and breed-origin simulation accept `mutation_rate`
+for independent allele flips after recombination, defaulting to zero.
+See [the genetic extension contract](docs/design/genetic_extensions.md) for
+units, missing calls, total-genetic heritability and qualification limits.

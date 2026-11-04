@@ -359,12 +359,14 @@
   return_haplotypes = TRUE,
   return_genotypes = FALSE,
   return_crossovers = TRUE,
-  batch_size = NULL
+  batch_size = NULL,
+  mutation_rate = 0
 ) {
   if (!inherits(pedigree, "gsim_pedigree") ||
       !is.data.frame(pedigree$pedigree) || is.null(pedigree$canonical_order)) {
     .gsim_stop("pedigree must be a gsim_pedigree object.")
   }
+  mutation_rate <- .gsim_mutation_rate(mutation_rate)
   canonical <- as.character(pedigree$canonical_order)
   tab <- pedigree$pedigree
   required <- c("animal", "sire", "dam")
@@ -544,6 +546,8 @@
           destination, i, h1, h2, parent_position,
           plan$starting_haplotype, plan$boundaries
         )
+        if (mutation_rate > 0) .Call(C_gsim_packed_mutate,destination,as.integer(i-1L),
+          mutation_rate,as.double(seed),canonical[[i]],chromosome[[1L]],as.integer(side))
         if (return_crossovers) {
           side_name <- if (side == 1L) "paternal" else "maternal"
           child_phase <- if (side == 1L) "H1" else "H2"
@@ -624,7 +628,7 @@
       crossover_boundary = "crossovers at x switch before assigning markers at x",
       rng = "SplitMix64 with stable FNV-1a UTF-8 identifier hashing",
       stream_key = "seed, child animal ID, chromosome label, parental side",
-      seed = as.double(seed), global_rng = "not used",
+      seed = as.double(seed), mutation_rate = mutation_rate, global_rng = "not used",
       batch_policy = "operational batch boundaries do not enter RNG streams",
       unrelated_animal_policy = "stable IDs leave existing streams unchanged",
       storage = "gsim marker-major one-bit phased haplotypes",

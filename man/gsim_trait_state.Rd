@@ -4,15 +4,23 @@
 \alias{gsim_trait_state}
 \title{Create persistent marker-effect and reporting-base state}
 \usage{
-gsim_trait_state(effects, center = 0)
+gsim_trait_state(effects, center = 0, dominance = NULL, interaction = NULL)
 }
 \arguments{
 \item{effects}{Finite marker-by-trait matrix with marker row names, or a
 \code{gsim} result created with \code{standardize_W=FALSE}, whose \code{B} matrix supplies
 raw-dosage effects. Standardized results are rejected because their dosage
-scaling is not retained. A supplied matrix must already use raw-dosage units.}
+scaling is not retained. A supplied matrix must already use raw-dosage units.
+A gsim result also supplies its dominance and interaction effects unless
+explicit replacements are passed.}
 
 \item{center}{Scalar or marker-named dosage center. It remains fixed across cohorts.}
+
+\item{dominance}{Named marker-by-trait heterozygosity effects, or NULL.}
+
+\item{interaction}{Named marker-by-trait raw-dosage environmental slopes, or NULL.
+Missing dominance calls use fixed HWE heterozygosity from center/2;
+interaction calls use the fixed dosage center. Effects are never rescaled.}
 }
 \value{
 Compact \code{gsim_trait_state}. Effects are never rescaled or redrawn

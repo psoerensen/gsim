@@ -46,8 +46,8 @@ extern "C" SEXP C_gsim_bed_read_selected(SEXP file, SEXP samples, SEXP markers,
     return R_NilValue;
 }
 
-extern "C" SEXP C_gsim_bed_accumulate(SEXP files, SEXP file_index, SEXP columns,
-                                     SEXP replacement, SEXP center, SEXP scale, SEXP effects) {
+static SEXP bed_accumulate(SEXP files, SEXP file_index, SEXP columns,
+                                     SEXP replacement, SEXP center, SEXP scale, SEXP effects, bool heterozygote) {
     try {
         if (TYPEOF(files) != VECSXP || !XLENGTH(files) || XLENGTH(files) > INT_MAX)
             throw std::runtime_error("invalid BED file descriptors");
@@ -101,11 +101,28 @@ extern "C" SEXP C_gsim_bed_accumulate(SEXP files, SEXP file_index, SEXP columns,
                 rows = VECTOR_ELT(spec, 3); active = f;
             }
             reader->read_record(INTEGER(columns)[j] - 1);
-            reader->add_variant(INTEGER(rows), ns, REAL(replacement)[j], REAL(center)[j],
-                                REAL(scale)[j], REAL(effects), j, c, traits, REAL(out));
+            if (!heterozygote) {
+                reader->add_variant(INTEGER(rows), ns, REAL(replacement)[j], REAL(center)[j],
+                                    REAL(scale)[j], REAL(effects), j, c, traits, REAL(out));
+            } else {
+                for (R_xlen_t i = 0; i < ns; ++i) {
+                    const int dosage = reader->dosage(INTEGER(rows)[i] - 1);
+                    const double h = dosage < 0 ? REAL(replacement)[j] : (dosage == 1 ? 1.0 : 0.0);
+                    const double value = (h - REAL(center)[j]) / REAL(scale)[j];
+                    for (int t = 0; t < traits; ++t)
+                        REAL(out)[t * ns + i] += value * REAL(effects)[t * c + j];
+                }
+            }
         }
         UNPROTECT(1);
         return out;
     } catch (const std::exception& ex) { Rf_error("native BED accumulation: %s", ex.what()); }
     return R_NilValue;
+}
+
+extern "C" SEXP C_gsim_bed_accumulate(SEXP f, SEXP i, SEXP c, SEXP r, SEXP m, SEXP s, SEXP b) {
+    return bed_accumulate(f,i,c,r,m,s,b,false);
+}
+extern "C" SEXP C_gsim_bed_dominance(SEXP f, SEXP i, SEXP c, SEXP r, SEXP m, SEXP s, SEXP b) {
+    return bed_accumulate(f,i,c,r,m,s,b,true);
 }

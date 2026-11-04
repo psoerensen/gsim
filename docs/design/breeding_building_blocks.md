@@ -59,6 +59,11 @@ summaries use identities and observable values. There is no automatic selection
 correction: retaining parents and using representative samples makes such
 strategies testable, rather than certifying unbiased genomic estimates.
 
+Optional [dominance and environmental slope effects](genetic_extensions.md)
+can be frozen in the same trait state. Record-specific environments can act
+on supplied genomic slopes across visits. Incremental cohorts also accept
+independent offspring mutation after recombination.
+
 ## Randomness and selection probabilities
 
 New kernels use independent identity-keyed SplitMix64 streams. Mating keys use

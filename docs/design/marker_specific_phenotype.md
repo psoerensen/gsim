@@ -9,8 +9,9 @@ Glist access. HAPNEST is provenance for one possible parameterization of
 marker-specific variance; callers supply the general probabilities and weights
 required by their study.
 
-The model does not include dominance, epistasis, GxE, multiallelic effects, or a new
-genotype representation.
+Explicit supplied dominance and environmental slope effects are described in
+[genetic extensions](genetic_extensions.md). Epistasis, multiallelic effects and
+a new genotype representation remain outside this model.
 
 ## Call flow
 

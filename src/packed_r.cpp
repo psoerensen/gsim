@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -753,5 +754,101 @@ extern "C" SEXP C_gsim_packed_bed_read_all(
     } catch (const std::exception& ex) {
         Rf_error("native BED validation decode: %s", ex.what());
     }
+    return R_NilValue;
+}
+
+// BOA truth accumulation: read packed alleles directly; ancestry is byte-per-copy.
+extern "C" SEXP C_gsim_boa_values(SEXP h1s, SEXP h2s, SEXP a1, SEXP a2,
+    SEXP frequencies, SEXP effects, SEXP lbp, SEXP fractions) {
+    try {
+        const auto& h1 = require_packed(h1s)->value;
+        const auto& h2 = require_packed(h2s)->value;
+        const auto n = h1.individual_count(), m = h1.marker_count();
+        auto dimensions = [](SEXP x, int type, const char* name) {
+            SEXP d = Rf_getAttrib(x, R_DimSymbol);
+            if (TYPEOF(x) != type || TYPEOF(d) != INTSXP || XLENGTH(d) != 2)
+                fail(std::string(name) + " must be a matrix of the required type");
+            return std::make_pair(INTEGER(d)[0], INTEGER(d)[1]);
+        };
+        const auto da = dimensions(a1, RAWSXP, "ancestry H1");
+        const auto db = dimensions(a2, RAWSXP, "ancestry H2");
+        const auto df = dimensions(frequencies, REALSXP, "frequencies");
+        const auto de = dimensions(effects, REALSXP, "effects");
+        const auto dl = dimensions(lbp, REALSXP, "LBP effects");
+        const auto dp = dimensions(fractions, REALSXP, "pedigree fractions");
+        const int breeds = df.second;
+        if (!n || !m || breeds < 2 || breeds > 255 || de.second % breeds ||
+            da.first != static_cast<int>(n) || da.second != static_cast<int>(m) ||
+            db != da || df.first != static_cast<int>(m) || de.first != df.first ||
+            dl != de || dp.first != static_cast<int>(n) || dp.second != breeds ||
+            h2.individual_count() != n || h2.marker_count() != m)
+            fail("BOA packed, ancestry, covariance and fraction dimensions disagree");
+        const int q = de.second / breeds;
+        if (q < 1 || q > 64 || (breeds + 1) * q > std::numeric_limits<int>::max())
+            fail("unsupported BOA genetic channel count");
+        for (R_xlen_t k = 0; k < XLENGTH(effects); ++k)
+            if (!std::isfinite(REAL(effects)[k]) || !std::isfinite(REAL(lbp)[k]))
+                fail("BOA effects must be finite");
+        for (R_xlen_t k = 0; k < XLENGTH(frequencies); ++k)
+            if (!std::isfinite(REAL(frequencies)[k]) || REAL(frequencies)[k] < 0 || REAL(frequencies)[k] > 1)
+                fail("BOA frequencies must be in [0,1]");
+        for (R_xlen_t k = 0; k < XLENGTH(fractions); ++k)
+            if (!std::isfinite(REAL(fractions)[k]) || REAL(fractions)[k] < 0 || REAL(fractions)[k] > 1)
+                fail("BOA pedigree fractions must be in [0,1]");
+        SEXP out = PROTECT(Rf_allocMatrix(REALSXP, static_cast<int>(n), (breeds + 1) * q));
+        std::fill(REAL(out), REAL(out) + XLENGTH(out), 0.0);
+        for (std::uint64_t j = 0; j < m; ++j) {
+            if ((j & 255) == 0) R_CheckUserInterrupt();
+            for (std::uint64_t i = 0; i < n; ++i) {
+                const auto k = i + n * j;
+                const int b1 = RAW(a1)[k], b2 = RAW(a2)[k];
+                if (b1 >= breeds || b2 >= breeds) fail("BOA ancestry code outside breed order");
+                for (int b = 0; b < breeds; ++b) {
+                    const double p = REAL(frequencies)[j + m * b];
+                    const double z = (b1 == b ? h1.allele(i,j) - p : 0) +
+                                     (b2 == b ? h2.allele(i,j) - p : 0);
+                    const double d = (b1 == b) + (b2 == b) - 2 * REAL(fractions)[i + n * b];
+                    for (int t = 0; t < q; ++t) {
+                        const auto col = b * q + t;
+                        REAL(out)[i + n * col] += z * REAL(effects)[j + m * col];
+                        REAL(out)[i + n * (breeds * q + t)] += d * REAL(lbp)[j + m * col];
+                    }
+                }
+            }
+        }
+        UNPROTECT(1);
+        return out;
+    } catch (const std::exception& ex) {
+        Rf_error("native BOA values: %s", ex.what());
+    }
+    return R_NilValue;
+}
+
+extern "C" SEXP C_gsim_packed_mutate(SEXP ptr, SEXP row, SEXP probability,
+    SEXP seed, SEXP animal, SEXP chromosome, SEXP side) {
+    try {
+        auto& matrix = require_packed(ptr)->value;
+        const int individual = scalar_int(row,"mutation individual");
+        if (static_cast<std::uint64_t>(individual) >= matrix.individual_count()) fail("mutation individual out of range");
+        if (TYPEOF(probability)!=REALSXP || XLENGTH(probability)!=1 || !R_FINITE(REAL(probability)[0]) || REAL(probability)[0]<0 || REAL(probability)[0]>1)
+            fail("mutation_rate must be in [0,1]");
+        if (TYPEOF(seed)!=REALSXP || XLENGTH(seed)!=1 || !R_FINITE(REAL(seed)[0]) || REAL(seed)[0]<0 || REAL(seed)[0]>9007199254740991.0 || std::floor(REAL(seed)[0])!=REAL(seed)[0]) fail("invalid mutation seed");
+        const int phase = scalar_int(side,"mutation side",1);
+        if (phase>2) fail("invalid mutation side");
+        auto mix=[](std::uint64_t x) { x=(x^(x>>30))*UINT64_C(0xbf58476d1ce4e5b9);x=(x^(x>>27))*UINT64_C(0x94d049bb133111eb);return x^(x>>31); };
+        auto hash=[](SEXP s) {
+            if(TYPEOF(s)!=STRSXP || XLENGTH(s)!=1 || STRING_ELT(s,0)==NA_STRING) fail("invalid mutation identity");
+            std::uint64_t h=UINT64_C(14695981039346656037);
+            for(const unsigned char* c=reinterpret_cast<const unsigned char*>(Rf_translateCharUTF8(STRING_ELT(s,0)));*c;++c) {h^=*c;h*=UINT64_C(1099511628211);}return h;
+        };
+        std::uint64_t key=mix(static_cast<std::uint64_t>(REAL(seed)[0]) ^ UINT64_C(0x6d75746174696f6e));
+        key^=mix(hash(animal));key^=mix(hash(chromosome)^UINT64_C(0x9137a4c5298be603));key^=mix(phase);
+        double count=0;const double rate=REAL(probability)[0];
+        if(rate>0) for(std::uint64_t j=0;j<matrix.marker_count();++j) {
+            const double u=(static_cast<double>(mix(key^mix(j))>>11)+0.5)/9007199254740992.0;
+            if(rate==1 || u<rate) {matrix.set_allele(individual,j,1u-matrix.allele(individual,j));++count;}
+        }
+        return Rf_ScalarReal(count);
+    } catch(const std::exception& e) {Rf_error("packed offspring mutation: %s",e.what());}
     return R_NilValue;
 }

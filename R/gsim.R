@@ -98,6 +98,19 @@
 #'   dosages across repeated reads. NULL uses native BED access; unsupported
 #'   storage errors instead of silently falling back to dense extraction.
 #'
+#' @param dominance Optional named marker-by-trait effects on heterozygosity
+#'   (1 for genotype 1, otherwise 0). Raw diploid hard-call units, uncentered.
+#' @param interaction Optional named marker-by-trait environmental slope effects
+#'   on raw dosage. No main environmental effect is added implicitly.
+#' @param environment Finite scalar or sample-named covariate, required with
+#'   interaction. The caller chooses the environmental zero and units.
+#' @details With extensions, G is additive + dominance + environment times
+#'   marker slope. Missing calls use observed mean dosage/heterozygosity among
+#'   selected samples. When scale_effects is TRUE, one trait-wise multiplier
+#'   calibrates the total G to vg and rescales all effect and truth components.
+#'   h2 then denotes total genetic, rather than narrow-sense, heritability.
+#'   Component labels describe additive membership; the causal table includes
+#'   the union of additive, dominance and interaction loci with separate effects.
 #' @return A list containing phenotypes, genetic values, residuals, exact marker
 #'   effects and states, annotation truth, probability surfaces, the complete
 #'   canonical `causal_probability` and `marker_multipliers` vectors, compact
@@ -153,7 +166,10 @@ gsim <- function(
   return_marker_probabilities = TRUE,
   compute_sumstats = FALSE,
   chunk_size = 5000L,
-  getG_fun = NULL
+  getG_fun = NULL,
+  dominance = NULL,
+  interaction = NULL,
+  environment = NULL
 ) {
   architecture <- match.arg(architecture)
   annotation_model <- match.arg(annotation_model)
@@ -478,7 +494,12 @@ gsim <- function(
       causal_spec$settings$policy
   )
 
-  causal_idx <- which(component != 1L)
+  D <- .gsim_extension_effects(dominance,marker_ids,paste0("D",seq_len(nt)),"dominance")
+  I <- .gsim_extension_effects(interaction,marker_ids,paste0("D",seq_len(nt)),"interaction")
+  extra_active<-rep(FALSE,length(marker_ids))
+  if(!is.null(D))extra_active<-extra_active|rowSums(abs(D))>0
+  if(!is.null(I))extra_active<-extra_active|rowSums(abs(I))>0
+  causal_idx <- which(component != 1L | extra_active)
   if (!length(causal_idx)) {
     .gsim_stop("The architecture contains no causal marker.")
   }
@@ -523,6 +544,18 @@ gsim <- function(
   colnames(G) <- paste0("D", seq_len(nt))
   rownames(G) <- sample_ids
 
+  G_additive <- G
+  if(is.null(I) != is.null(environment)) .gsim_stop("Supply interaction and environment together.")
+  env <- if(!is.null(I)) .gsim_environment(environment,sample_ids) else NULL
+  load_extra <- if(mode=="Glist") function(markers)
+    .gsim_load_glist_markers(Glist,markers,sample_ids,chr_map,getG_resolved,min(chunk_size,64L)) else
+    function(markers) W_full_raw[,match(markers,marker_ids),drop=FALSE]
+  extra_plan <- if(mode=="Glist")bed_plan else NULL
+  G_dominance <- if(!is.null(D)) .gsim_extension_values(D,TRUE,marker_ids,sample_ids,load_extra,extra_plan,min(chunk_size,64L)) else NULL
+  G_slope <- if(!is.null(I)) .gsim_extension_values(I,FALSE,marker_ids,sample_ids,load_extra,extra_plan,min(chunk_size,64L)) else NULL
+  G_interaction <- if(!is.null(I))G_slope*as.double(env) else NULL
+  if(!is.null(D))G <- G + G_dominance
+  if(!is.null(I))G <- G + G_interaction
   raw_vg <- apply(G, 2L, stats::var)
   if (any(!is.finite(raw_vg) | raw_vg <= 0)) {
     .gsim_stop("The sampled effects produced zero or non-finite genetic variance.")
@@ -532,10 +565,17 @@ gsim <- function(
     effect_scale <- sqrt(vg / raw_vg)
     B <- sweep(B, 2L, effect_scale, "*")
     B_causal <- B[causal_idx, , drop = FALSE]
-    G <- if (mode == "Glist") sweep(G, 2L, effect_scale, "*") else
-      W_causal %*% B_causal
+    if(!is.null(D))D<-sweep(D,2L,effect_scale,"*")
+    if(!is.null(I))I<-sweep(I,2L,effect_scale,"*")
+    if(!is.null(D)||!is.null(I))G_additive<-sweep(G_additive,2L,effect_scale,"*")
+    if(!is.null(D))G_dominance<-sweep(G_dominance,2L,effect_scale,"*")
+    if(!is.null(I))G_slope<-sweep(G_slope,2L,effect_scale,"*")
+    if(!is.null(I))G_interaction<-sweep(G_interaction,2L,effect_scale,"*")
+    G <- if(is.null(D) && is.null(I) && mode!="Glist") W_causal %*% B_causal else
+      sweep(G,2L,effect_scale,"*")
   }
 
+  if(is.null(D)&&is.null(I))G_additive<-G
   realized_vg <- apply(G, 2L, stats::var)
   residual_var <- realized_vg * (1 - h2) / h2
   D_e <- diag(sqrt(residual_var), nrow = nt, ncol = nt)
@@ -572,12 +612,21 @@ gsim <- function(
     maf = unname(maf_all[causal_ids]),
     stringsAsFactors = FALSE
   )
-  for (t in seq_len(nt)) causal_table[[paste0("beta_D", t)]] <- B_causal[, t]
+  for (t in seq_len(nt)) {
+    causal_table[[paste0("beta_D", t)]] <- B_causal[, t]
+    if(!is.null(D))causal_table[[paste0("dominance_D",t)]]<-D[causal_idx,t]
+    if(!is.null(I))causal_table[[paste0("interaction_D",t)]]<-I[causal_idx,t]
+  }
 
   out <- list(
     y = if (nt == 1L) Y[, 1L] else Y,
     Y = Y,
     G = G,
+    G_additive = G_additive,
+    G_dominance = G_dominance,
+    G_interaction = G_interaction,
+    G_slope = G_slope,
+    dominance = D, interaction = I, environment = env,
     E = E,
     B = B,
     B_causal = B_causal,
@@ -621,6 +670,8 @@ gsim <- function(
       standardize_W = standardize_W,
       scale_effects = scale_effects,
       effect_scale = effect_scale,
+      genetic_model = list(dominance="uncentered heterozygosity",interaction="raw dosage slope times supplied environment",
+        heritability=if(is.null(D)&&is.null(I))"additive" else "total genetic"),
       causal_probability = causal_probability_settings,
       marker_multipliers = multiplier$settings,
       chunk_size = chunk_size,

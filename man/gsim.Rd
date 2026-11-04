@@ -49,7 +49,10 @@ gsim(
   return_marker_probabilities = TRUE,
   compute_sumstats = FALSE,
   chunk_size = 5000L,
-  getG_fun = NULL
+  getG_fun = NULL,
+  dominance = NULL,
+  interaction = NULL,
+  environment = NULL
 )
 }
 \arguments{
@@ -182,6 +185,15 @@ decoded copies are bounded by this cap, independently of causal count.}
 calling convention. Must honor bounded requests and return consistent raw
 dosages across repeated reads. NULL uses native BED access; unsupported
 storage errors instead of silently falling back to dense extraction.}
+
+\item{dominance}{Optional named marker-by-trait effects on heterozygosity
+(1 for genotype 1, otherwise 0). Raw diploid hard-call units, uncentered.}
+
+\item{interaction}{Optional named marker-by-trait environmental slope effects
+on raw dosage. No main environmental effect is added implicitly.}
+
+\item{environment}{Finite scalar or sample-named covariate, required with
+interaction. The caller chooses the environmental zero and units.}
 }
 \value{
 A list containing phenotypes, genetic values, residuals, exact marker
@@ -200,4 +212,13 @@ Glist mode, causal variants are selected from marker metadata. Selected BED dosa
 blocks for statistics, then accumulated natively for all traits without a
 complete causal-genotype matrix. Genome-wide genotypes are read in bounded
 chunks only when \code{compute_sumstats = TRUE}.
+}
+\details{
+With extensions, G is additive + dominance + environment times
+marker slope. Missing calls use observed mean dosage/heterozygosity among
+selected samples. When scale_effects is TRUE, one trait-wise multiplier
+calibrates the total G to vg and rescales all effect and truth components.
+h2 then denotes total genetic, rather than narrow-sense, heritability.
+Component labels describe additive membership; the causal table includes
+the union of additive, dominance and interaction loci with separate effects.
 }

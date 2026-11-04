@@ -165,16 +165,24 @@ gsim_mate <- function(pedigree,sires,dams,offspring,seed=1,generation=NULL,sex=N
 #'   `gsim` result created with `standardize_W=FALSE`, whose `B` matrix supplies
 #'   raw-dosage effects. Standardized results are rejected because their dosage
 #'   scaling is not retained. A supplied matrix must already use raw-dosage units.
+#'   A gsim result also supplies its dominance and interaction effects unless
+#'   explicit replacements are passed.
 #' @param center Scalar or marker-named dosage center. It remains fixed across cohorts.
+#' @param dominance Named marker-by-trait heterozygosity effects, or NULL.
+#' @param interaction Named marker-by-trait raw-dosage environmental slopes, or NULL.
+#'   Missing dominance calls use fixed HWE heterozygosity from center/2;
+#'   interaction calls use the fixed dosage center. Effects are never rescaled.
 #' @return Compact `gsim_trait_state`. Effects are never rescaled or redrawn
 #'   when the state is applied to later cohorts. Missing BED calls are imputed
 #'   with this fixed center, not with selected-cohort allele frequencies.
 #' @export
 #' @importFrom stats setNames
-gsim_trait_state <- function(effects,center=0) {
+gsim_trait_state <- function(effects,center=0,dominance=NULL,interaction=NULL) {
   if(inherits(effects,"gsim")) {
     if(!identical(effects$settings$standardize_W,FALSE))
       .gsim_stop("A gsim result must use standardize_W=FALSE; standardized dosage scaling is not retained.")
+    if(is.null(dominance))dominance<-effects$dominance
+    if(is.null(interaction))interaction<-effects$interaction
     effects<-effects$B
   }
   effects<-.gsim_block_matrix(effects,"effects");markers<-.gsim_block_ids(rownames(effects),"effect marker names")
@@ -185,8 +193,11 @@ gsim_trait_state <- function(effects,center=0) {
   if(!is.numeric(center) || is.null(names(center)) || anyDuplicated(names(center)) || !setequal(names(center),markers))
     .gsim_stop("center must be scalar or name all effect markers exactly once.")
   center<-as.double(center[match(markers,names(center))]);if(any(!is.finite(center)) || any(center<0|center>2)) .gsim_stop("Dosage centers must be in [0,2].")
-  structure(list(effects=effects,center=setNames(center,markers),
-    checksum=.gsim_block_checksum(list(effects,center))),class="gsim_trait_state")
+  dominance<-.gsim_extension_effects(dominance,markers,colnames(effects),"dominance")
+  interaction<-.gsim_extension_effects(interaction,markers,colnames(effects),"interaction")
+  signature<-if(is.null(dominance)&&is.null(interaction))list(effects,center) else list(effects,center,dominance,interaction)
+  structure(list(effects=effects,center=setNames(center,markers),dominance=dominance,interaction=interaction,
+    checksum=.gsim_block_checksum(signature)),class="gsim_trait_state")
 }
 
 .gsim_block_bed <- function(genotypes) {
@@ -204,21 +215,44 @@ gsim_trait_state <- function(effects,center=0) {
 #' Apply persistent genomic truth to a BED cohort
 #' @param genotypes BED prefix, BED manifest, or `gsim_cohort`.
 #' @param state A persistent `gsim_trait_state`.
+#' @param environment Finite scalar or sample-named environmental covariate.
+#'   Required when the state has interaction effects.
 #' @param ids Optional unique sample IDs, in desired result order.
 #' @return Animal-by-trait genomic values accumulated natively from packed BED.
 #'   No phenotype generation, realized-variance normalization, cohort recentering,
 #'   qgg dependency, or full decoded genotype matrix is involved.
 #' @export
-gsim_genetic_values <- function(genotypes,state,ids=NULL) {
+gsim_genetic_values <- function(genotypes,state,ids=NULL,environment=NULL) {
   if(!inherits(state,"gsim_trait_state")) .gsim_stop("state must be a gsim_trait_state.")
-  state<-gsim_trait_state(state$effects,state$center);bed<-.gsim_block_bed(genotypes)
+  state<-gsim_trait_state(state$effects,state$center,state$dominance,state$interaction);bed<-.gsim_block_bed(genotypes)
   if(is.null(ids))ids<-bed$samples else ids<-.gsim_block_ids(ids,"ids")
   rows<-match(ids,bed$samples);columns<-match(rownames(state$effects),bed$markers)
   if(anyNA(rows) || anyNA(columns)) .gsim_stop("Selected animal/effect marker identities must be present in BED.")
   descriptor<-list(enc2utf8(bed$paths[["bed"]]),as.integer(length(bed$samples)),as.integer(length(bed$markers)),as.integer(rows))
   result<-.Call(C_gsim_bed_accumulate,list(descriptor),rep.int(1L,length(columns)),as.integer(columns),
     as.double(state$center),as.double(state$center),rep(1,length(columns)),state$effects)
-  dimnames(result)<-list(ids,colnames(state$effects));attr(result,"trait_state_checksum")<-state$checksum;result
+  dimnames(result)<-list(ids,colnames(state$effects))
+  additive<-result;dominance<-slope<-NULL
+  if(!is.null(state$dominance)) {
+    probability<-as.double(state$center)/2
+    dominance<-.Call(C_gsim_bed_dominance,list(descriptor),rep.int(1L,length(columns)),as.integer(columns),
+      2*probability*(1-probability),rep(0,length(columns)),rep(1,length(columns)),state$dominance)
+    dimnames(dominance)<-dimnames(result)
+  }
+  if(!is.null(state$interaction)) {
+    if(is.null(environment)) .gsim_stop("environment is required for interaction effects.")
+    env<-.gsim_environment(environment,ids)
+    slope<-.Call(C_gsim_bed_accumulate,list(descriptor),rep.int(1L,length(columns)),as.integer(columns),
+      as.double(state$center),rep(0,length(columns)),rep(1,length(columns)),state$interaction)
+    dimnames(slope)<-dimnames(result)
+  } else if(!is.null(environment)) .gsim_stop("environment requires interaction effects.")
+  interaction<-if(!is.null(state$interaction))slope*as.double(env) else slope
+  if(!is.null(state$dominance)||!is.null(state$interaction)) {
+    if(!is.null(dominance))result<-result+dominance
+    if(!is.null(interaction))result<-result+interaction
+    attr(result,"genetic_components")<-list(additive=additive,dominance=dominance,interaction=interaction,slope=slope)
+  }
+  attr(result,"trait_state_checksum")<-state$checksum;result
 }
 
 .gsim_block_factor <- function(covariance,traits,name) {
@@ -246,6 +280,10 @@ gsim_genetic_values <- function(genotypes,state,ids=NULL) {
 #' @param records Data frame with unique `record`, `animal`, and `trait` IDs.
 #'   Optional `observation_unit` groups correlated residuals across traits.
 #'   Default creates one record per animal and trait.
+#' @param interaction_values Optional animal-by-genetic-column slope matrix,
+#'   with the same identities as genetic_values. Added through genetic_design.
+#' @param environment Finite scalar or record-named covariate. Required with
+#'   interaction_values. No environmental main effect is added implicitly.
 #' @param genetic_design Optional record-by-genetic-column design, for example
 #'   longitudinal basis rows. Default uses the record's trait column.
 #' @param fixed Scalar or one fixed-effect contribution per record.
@@ -259,7 +297,7 @@ gsim_genetic_values <- function(genotypes,state,ids=NULL) {
 #'   generate the genetic record contribution. At most 64 observed traits.
 #' @export
 gsim_records <- function(genetic_values,records=NULL,genetic_design=NULL,fixed=0,
-  residual_covariance=1,permanent_covariance=NULL,seed=1) {
+  residual_covariance=1,permanent_covariance=NULL,seed=1,interaction_values=NULL,environment=NULL) {
   G<-.gsim_block_matrix(genetic_values,"genetic_values")
   animals<-.gsim_block_ids(rownames(G),"genomic animal names");coefficients<-.gsim_block_ids(colnames(G),"genomic column names")
   if(length(animals)!=nrow(G) || length(coefficients)!=ncol(G)) .gsim_stop("Genomic values require row/column identities.")
@@ -303,10 +341,22 @@ gsim_records <- function(genetic_values,records=NULL,genetic_design=NULL,fixed=0
   if(length(fixed)!=nrow(records) || any(!is.finite(fixed))) .gsim_stop("fixed must align to records.")
   R<-.gsim_block_factor(residual_covariance,traits,"residual_covariance")
   P<-.gsim_block_factor(permanent_covariance,traits,"permanent_covariance");seed<-.gsim_block_seed(seed)
+  interaction_truth<-rep(0,nrow(records))
+  if(is.null(interaction_values)!=is.null(environment)) .gsim_stop("Supply interaction_values and environment together.")
+  if(!is.null(interaction_values)) {
+    slopes<-.gsim_block_matrix(interaction_values,"interaction_values")
+    if(is.null(rownames(slopes)) || is.null(colnames(slopes)) || anyDuplicated(rownames(slopes)) ||
+      anyDuplicated(colnames(slopes)) || !setequal(rownames(slopes),animals) || !setequal(colnames(slopes),coefficients))
+      .gsim_stop("interaction_values identities must match genetic_values.")
+    slopes<-slopes[animals,coefficients,drop=FALSE]
+    exposure<-.gsim_environment(environment,records$record)
+    interaction_truth<-unname(rowSums(slopes[match(records$animal,animals),,drop=FALSE]*design)*as.double(exposure))
+    G<-cbind(G,slopes);design<-cbind(design,design*as.double(exposure))
+  }
   value<-.Call(C_gsim_breeding_records,G,as.integer(match(records$animal,animals)),design,fixed,
     records$animal,records$observation_unit,as.integer(match(records$trait,traits)),traits,R,P,seed)
   records$value<-value[,4]
-  structure(list(records=records,truth=list(genetic=value[,1],fixed=fixed,permanent=value[,2],residual=value[,3]),
+  structure(list(records=records,truth=list(genetic=value[,1],interaction=interaction_truth,fixed=fixed,permanent=value[,2],residual=value[,3]),
     noise=list(records=records[,c("record","animal","trait","observation_unit")],traits=traits,
       residual_factor=R,permanent_factor=P),settings=list(seed=seed,
       rng="identity-keyed SplitMix64/Box-Muller; R RNG unused",genetic_source="supplied genomic values")),class="gsim_records")

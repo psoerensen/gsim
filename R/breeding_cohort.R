@@ -8,6 +8,8 @@
 #' @param offspring Data frame containing `animal`, `sire`, `dam`, optionally
 #'   sex and cohort labels; alternatively the result of [gsim_mate()].
 #' @param seed Nonnegative integer-valued meiosis seed.
+#' @param mutation_rate Per-marker, per-gamete allele-flip probability between zero and one.
+#'   Mutation uses a separate identity-keyed stream after recombination.
 #' @param output New directory for the cohort's `phase` and `dosage` triplets.
 #'   Existing directories are refused, including after a partial publication.
 #' @return `gsim_cohort` with HAP/BED manifests, offspring metadata, actual
@@ -16,7 +18,8 @@
 #'   previous cohorts are not accumulated. Parent datasets can be consolidated
 #'   externally when mating across several historical cohorts.
 #' @export
-gsim_simulate_cohort <- function(parents, offspring, seed, output) {
+gsim_simulate_cohort <- function(parents, offspring, seed, output, mutation_rate=0) {
+  mutation_rate<-.gsim_mutation_rate(mutation_rate)
   if (inherits(parents,"gsim_cohort")) parents<-parents$hap
   if (is.list(parents) && !inherits(parents,"gsim_reference") && !is.null(parents$paths[["hap"]]))
     parents<-sub("[.]hap$","",parents$paths[["hap"]])
@@ -55,7 +58,7 @@ gsim_simulate_cohort <- function(parents, offspring, seed, output) {
   output<-normalizePath(output,winslash="/",mustWork=FALSE)
   if (file.exists(output)) .gsim_stop("Cohort output already exists.")
   if (!dir.create(output,recursive=TRUE)) .gsim_stop("Cannot create cohort output directory.")
-  provenance<-list(operation="incremental packed cohort meiosis",parent_prefix=parents$prefix,seed=seed)
+  provenance<-list(operation="incremental packed cohort meiosis",parent_prefix=parents$prefix,seed=seed,mutation_rate=mutation_rate)
   hap<-bed<-NULL;complete<-FALSE
   on.exit({if(!complete) {
     if(!is.null(hap))try(.gsim_hap_dataset_cancel(hap),silent=TRUE)
@@ -80,7 +83,7 @@ gsim_simulate_cohort <- function(parents, offspring, seed, output) {
       .gsim_packed_copy_interval(selected[[side]],i,base[[side]],source_rows[[i]],1L,length(markers))
     generated<-.gsim_pedigree_genotypes_packed_chromosome(local,selected,
       rep.int(chromosome,length(markers)),variants$genetic_position_cm/100,seed,
-      return_haplotypes=TRUE,return_genotypes=FALSE,return_crossovers=FALSE)
+      return_haplotypes=TRUE,return_genotypes=FALSE,return_crossovers=FALSE,mutation_rate=mutation_rate)
     keep(generated$h1);keep(generated$h2)
     child<-list(h1=keep(.gsim_packed_zero(nrow(offspring),length(markers),offspring$animal,markers)),
       h2=keep(.gsim_packed_zero(nrow(offspring),length(markers),offspring$animal,markers)))
@@ -95,7 +98,7 @@ gsim_simulate_cohort <- function(parents, offspring, seed, output) {
   hap_manifest<-.gsim_hap_dataset_finalize(hap)
   bed_manifest<-.gsim_plink_dataset_finalize(bed);complete<-TRUE
   structure(list(hap=hap_manifest,bed=bed_manifest,offspring=offspring,parent_ids=used,
-    simulation=list(seed=seed,threads=1L,dense_genotype_matrix_allocated=FALSE,
+    simulation=list(seed=seed,mutation_rate=mutation_rate,threads=1L,dense_genotype_matrix_allocated=FALSE,
       peak_packed_chromosome_bytes=max(payload),source_parent_count=nrow(reader$samples),
       used_parent_count=length(used),offspring_count=nrow(offspring),
       meiosis="identity-keyed chromosome-wise Poisson no-interference",
