@@ -4,6 +4,13 @@ This document specifies the supported bounded VCF import contract in `gsim`.
 The production reader is private native C++ compiled into `gsim`; it does not
 invoke bcftools or link to a separately installed htslib, gbits, or gmat.
 
+## Site metadata and VCF subsetting
+
+`gsim_scan_vcf()` uses the same decompressor and reads fixed fields and requested
+INFO keys in batches without decoding genotypes. Callbacks can consume site
+metadata or select complete records for a gzip VCF subset. The original header,
+alleles and sample order are preserved in a subset. Region selection is sequential.
+
 ## Input and selection
 
 The reader recognizes plain VCF and gzip by file content. A gzip stream whose

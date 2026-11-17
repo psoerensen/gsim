@@ -9,6 +9,7 @@
 #include <cerrno>
 #include <cctype>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <limits>
@@ -331,12 +332,13 @@ class GzipInput final : public VcfLineInput {
   bool next(std::string& line) override {
     line.clear();
     while (true) {
-      for (std::size_t i = position_; i < available_; ++i) {
-        if (buffer_[i] == '\n') {
-          line.append(buffer_.data() + position_, i - position_);
-          position_ = i + 1u;
-          return true;
-        }
+      const char* start = buffer_.data() + position_;
+      const auto* newline = static_cast<const char*>(
+          std::memchr(start, '\n', available_ - position_));
+      if (newline) {
+        line.append(start, newline);
+        position_ = static_cast<std::size_t>(newline - buffer_.data()) + 1u;
+        return true;
       }
       if (available_ > position_) {
         line.append(buffer_.data() + position_, available_ - position_);
@@ -437,6 +439,50 @@ void unsupported_record(bool skip, VcfImportReport& report, Unsupported reason,
 }
 
 }  // namespace
+
+
+VcfSiteReader::VcfSiteReader(const std::string& path) {
+  input_ = open_input(path, detect_input_type(path));
+  std::string line;
+  while (input_->next(line)) {
+    ++line_number_;
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    header.push_back(line);
+    if (line.compare(0, 2, "##") == 0) continue;
+    const std::string heading = "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO";
+    if (line == heading || line.compare(0, heading.size() + 1, heading + "\t") == 0) return;
+    invalid("invalid fixed-field header at line " + std::to_string(line_number_));
+  }
+  invalid("missing #CHROM header");
+}
+
+VcfSiteReader::~VcfSiteReader() = default;
+
+bool VcfSiteReader::next() {
+  if (!input_) return false;
+  if (!input_->next(line)) {
+    input_->finish();
+    input_.reset();
+    return false;
+  }
+  ++line_number_;
+  if (!line.empty() && line.back() == '\r') line.pop_back();
+  if (line.empty() || line.front() == '#') {
+    invalid("unexpected record at line " + std::to_string(line_number_));
+  }
+  std::size_t begin = 0;
+  for (std::size_t i = 0; i < fields.size(); ++i) {
+    const auto end = line.find('\t', begin);
+    if (end == std::string::npos && i + 1 < fields.size()) {
+      invalid("incomplete record at line " + std::to_string(line_number_));
+    }
+    fields[i] = std::string_view(line).substr(begin, end - begin);
+    if (fields[i].empty()) invalid("empty fixed field at line " + std::to_string(line_number_));
+    begin = end + 1;
+  }
+  pos = position(std::string(fields[1]), line_number_);
+  return true;
+}
 
 PhasedVcfReader::PhasedVcfReader(
     const std::string& path, const std::vector<std::string>& selected_samples,

@@ -32,7 +32,7 @@ the versions, fixtures, and limits of their original measurements.
   exact causal composition, null controls, replicates, overlap and RNG semantics.
 
 The installed R help is authoritative for public arguments and return values:
-[reference](../man/gsim_reference.Rd), [VCF import](../man/gsim_import_vcf.Rd),
+[reference](../man/gsim_reference.Rd), [VCF import](../man/gsim_import_vcf.Rd), [VCF site scanner](../man/gsim_scan_vcf.Rd),
 [founders](../man/gsim_simulate_founders.Rd),
 [pedigree simulation](../man/gsim_simulate_pedigree.Rd),
 [phenotypes](../man/gsim.Rd), [gene sets](../man/gsim_gene_sets.Rd), [printing](../man/print.gsim.Rd),

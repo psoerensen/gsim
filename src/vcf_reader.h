@@ -1,10 +1,12 @@
 #ifndef GSIM_VCF_READER_H
 #define GSIM_VCF_READER_H
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace gsim::native::metadata {
@@ -44,6 +46,23 @@ struct VcfImportReport {
 };
 
 class VcfLineInput;
+
+
+class VcfSiteReader final {
+ public:
+  explicit VcfSiteReader(const std::string& path);
+  ~VcfSiteReader();
+  bool next();
+
+  std::vector<std::string> header;
+  std::string line;
+  std::array<std::string_view, 8> fields;
+  std::uint64_t pos{0};
+
+ private:
+  std::unique_ptr<VcfLineInput> input_;
+  std::uint64_t line_number_{0};
+};
 
 class PhasedVcfReader final {
  public:

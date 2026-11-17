@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <memory>
@@ -113,6 +114,90 @@ void require_r_length(std::uint64_t count, const char* field) {
 }
 
 }  // namespace
+
+
+extern "C" SEXP C_gsim_vcf_sites_open(SEXP path) {
+    try {
+        auto reader = std::make_unique<md::VcfSiteReader>(scalar_utf8(path, "VCF path"));
+        SEXP result = PROTECT(Rf_allocVector(VECSXP, 2));
+        SEXP heading = PROTECT(Rf_allocVector(STRSXP, reader->header.size()));
+        for (std::size_t i = 0; i < reader->header.size(); ++i) {
+            SET_STRING_ELT(heading, i, Rf_mkCharCE(reader->header[i].c_str(), CE_UTF8));
+        }
+        SET_VECTOR_ELT(result, 0, gsim::native::r::make_owned(reader.release()));
+        SET_VECTOR_ELT(result, 1, heading);
+        UNPROTECT(2);
+        return result;
+    } catch (const std::exception& e) {
+        Rf_error("%s", e.what());
+    }
+}
+
+extern "C" SEXP C_gsim_vcf_sites_close(SEXP pointer) {
+    gsim::native::r::finalizer<md::VcfSiteReader>(pointer);
+    return R_NilValue;
+}
+
+extern "C" SEXP C_gsim_vcf_sites_next(SEXP pointer, SEXP size, SEXP tags,
+                                      SEXP with_lines, SEXP chromosome, SEXP region) {
+    try {
+        auto* reader = gsim::native::r::require<md::VcfSiteReader>(pointer, "VCF site reader");
+        const auto info = strings(tags, "INFO keys");
+        const auto label = scalar_utf8(chromosome, "chromosome");
+        const bool bounded = XLENGTH(region) == 2;
+        const int limit = Rf_asInteger(size);
+        const bool raw = Rf_asLogical(with_lines) == TRUE;
+        const std::array<std::size_t, 6> fixed{0, 2, 3, 4, 5, 6};
+        const std::size_t first_info = 1 + fixed.size();
+        const std::size_t ncol = first_info + info.size() + (raw ? 1 : 0);
+        SEXP columns = PROTECT(Rf_allocVector(VECSXP, ncol));
+        SET_VECTOR_ELT(columns, 0, Rf_allocVector(REALSXP, limit));
+        for (std::size_t j = 1; j < ncol; ++j) {
+            SET_VECTOR_ELT(columns, j, Rf_allocVector(STRSXP, limit));
+        }
+        const auto text = [](std::string_view value) {
+            return Rf_mkCharLenCE(value.data(), static_cast<int>(value.size()), CE_UTF8);
+        };
+        int n = 0;
+        while (n < limit && reader->next()) {
+            const auto& fields = reader->fields;
+            if (!label.empty() && fields[0] != label) continue;
+            if (bounded && (reader->pos < REAL(region)[0] || reader->pos > REAL(region)[1])) continue;
+            REAL(VECTOR_ELT(columns, 0))[n] = static_cast<double>(reader->pos);
+            for (std::size_t j = 0; j < fixed.size(); ++j) {
+                SET_STRING_ELT(VECTOR_ELT(columns, j + 1), n, text(fields[fixed[j]]));
+            }
+            for (std::size_t j = 0; j < info.size(); ++j) {
+                SET_STRING_ELT(VECTOR_ELT(columns, first_info + j), n, NA_STRING);
+            }
+            auto fields_info = fields[7];
+            while (!info.empty() && !fields_info.empty()) {
+                const auto end = fields_info.find(';');
+                const auto field = fields_info.substr(0, end);
+                const auto split = field.find('=');
+                const auto key = field.substr(0, split);
+                for (std::size_t j = 0; j < info.size(); ++j) {
+                    if (key != info[j]) continue;
+                    const auto value = split == field.npos ? std::string_view("TRUE") :
+                        field.substr(split + 1);
+                    SET_STRING_ELT(VECTOR_ELT(columns, first_info + j), n, text(value));
+                    break;
+                }
+                if (end == fields_info.npos) break;
+                fields_info.remove_prefix(end + 1);
+            }
+            if (raw) SET_STRING_ELT(VECTOR_ELT(columns, ncol - 1), n, text(reader->line));
+            ++n;
+        }
+        SEXP result = PROTECT(Rf_allocVector(VECSXP, 2));
+        SET_VECTOR_ELT(result, 0, columns);
+        SET_VECTOR_ELT(result, 1, Rf_ScalarInteger(n));
+        UNPROTECT(2);
+        return result;
+    } catch (const std::exception& e) {
+        Rf_error("%s", e.what());
+    }
+}
 
 extern "C" SEXP C_gsim_metadata_variant_create(
     SEXP chromosome, SEXP ids, SEXP cm, SEXP bp, SEXP alt, SEXP ref) {
