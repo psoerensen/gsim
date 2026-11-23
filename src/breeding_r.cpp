@@ -1,4 +1,5 @@
 #include "bed_reader.h"
+#include "breeding_rng.h"
 #define R_NO_REMAP
 #include <R.h>
 #include <Rinternals.h>
@@ -21,28 +22,10 @@ std::string string(SEXP x,R_xlen_t i) {
   require(TYPEOF(x)==STRSXP && i<XLENGTH(x) && STRING_ELT(x,i)!=NA_STRING,"invalid string identity");
   return Rf_translateCharUTF8(STRING_ELT(x,i));
 }
-std::uint64_t mix(std::uint64_t x) {
-  x=(x^(x>>30))*UINT64_C(0xbf58476d1ce4e5b9);x=(x^(x>>27))*UINT64_C(0x94d049bb133111eb);return x^(x>>31);
-}
-std::uint64_t hash(const std::string& s) {
-  std::uint64_t h=UINT64_C(14695981039346656037);for(unsigned char c:s){h^=c;h*=UINT64_C(1099511628211);}return h;
-}
 std::uint64_t seed(SEXP x) {
   require(TYPEOF(x)==REALSXP && XLENGTH(x)==1 && R_FINITE(REAL(x)[0]) && REAL(x)[0]>=0 &&
     REAL(x)[0]<=9007199254740991. && REAL(x)[0]==std::floor(REAL(x)[0]),"invalid identity-stream seed");
   return static_cast<std::uint64_t>(REAL(x)[0]);
-}
-struct Rng {
-  using result_type=std::uint64_t;
-  std::uint64_t state;
-  static constexpr result_type min(){return 0;} static constexpr result_type max(){return UINT64_MAX;}
-  result_type operator()(){state+=UINT64_C(0x9e3779b97f4a7c15);return mix(state);}
-  double uniform(){return (static_cast<double>((*this)()>>11)+.5)/9007199254740992.;}
-  double normal(){return std::sqrt(-2*std::log(uniform()))*std::cos(6.2831853071795864769*uniform());}
-};
-Rng stream(std::uint64_t s,const std::string& id,const std::string& component,const std::string& domain) {
-  return {mix(mix(s)^mix(hash(id))^mix(hash(component)^UINT64_C(0x13198a2e03707344))^
-    mix(hash(domain)^UINT64_C(0xa4093822299f31d0)))};
 }
 int integer(SEXP x) {require(TYPEOF(x)==INTSXP && XLENGTH(x)==1 && INTEGER(x)[0]!=NA_INTEGER,"invalid integer scalar");return INTEGER(x)[0];}
 void matrix(SEXP x,int rows,int columns) {

@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+set -eu
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+exec "${GSIM_PYTHON:-python3}" "$root/share/gsim/gsim.py" "$@"

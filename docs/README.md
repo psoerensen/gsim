@@ -98,3 +98,6 @@ scenarios, observation windows and independent dropout. It is a development
 source helper, not an exported installed R API or a clinically calibrated model.
 The first 10,000-patient/128-code export passed focused data/feature checks;
 no fitted-method comparison or package/release qualification is implied.
+
+
+- [Standalone/shared-R simulation workflow](standalone.md): the additive frozen-pedigree smoke contract, canonical inputs, shared RNG/meiosis and portable CSV/JSON truth. Legacy R simulation behavior is retained.

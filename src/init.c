@@ -79,7 +79,10 @@ extern SEXP C_gsim_boa_values(SEXP,SEXP,SEXP,SEXP,SEXP,SEXP,SEXP,SEXP);
 
 extern SEXP C_gsim_bed_dominance(SEXP,SEXP,SEXP,SEXP,SEXP,SEXP,SEXP);
 extern SEXP C_gsim_packed_mutate(SEXP,SEXP,SEXP,SEXP,SEXP,SEXP,SEXP);
+extern SEXP C_gsim_simulation_workflow(SEXP, SEXP);
+
 static const R_CallMethodDef call_methods[] = {
+    {"C_gsim_simulation_workflow", (DL_FUNC) &C_gsim_simulation_workflow, 2},
     {"C_gsim_bed_dominance", (DL_FUNC) &C_gsim_bed_dominance, 7},
     {"C_gsim_packed_mutate", (DL_FUNC) &C_gsim_packed_mutate, 7},
     {"C_gsim_boa_values", (DL_FUNC) &C_gsim_boa_values, 8},
