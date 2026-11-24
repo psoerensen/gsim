@@ -88,3 +88,19 @@ A full catalogue and per-pair fitting qualification ship with the evaluation
 bundle. R/standalone parity and a reconstructed Gaussian draw are numerical
 checks; they are not reliability calibration, variance recovery or biological
 realism qualification.
+
+## Opt-in simulation phase truth for a held-out benchmark
+
+Marker-derived standalone recipes may set `export_truth_phases: true` (default
+false). The native core writes `truth_phase_pairs.u8`: one byte per marker and
+full-pedigree animal, marker-major then original FAM order. Bit 0 is paternal
+phase 0 and bit 1 maternal phase 1; values are 0..3. The export includes all
+pedigree animals, independently of genotyped membership. This is scoring truth,
+not an imputation or phasing input. Keep it physically separate from inference.
+The original packed inheritance, allele coding and default outputs are unchanged.
+
+`GSIM_BUILD_BENCHMARK_FIXTURE=ON` additionally builds `gsim_founder_fixture`, a
+benchmark-only synthetic binary Markov founder approximation. Its parameters
+and scientific limits are recorded in the consuming gsuite 10K pedigree-imputation
+benchmark; it is not a new demographic simulator or a qualified livestock
+founder panel. Default native builds do not build the fixture.

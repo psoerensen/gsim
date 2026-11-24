@@ -33,7 +33,7 @@ void simulate_recipe(const std::string& wire,const std::string& destination){
  if(wire.rfind("GSIM_GAUSSIAN 1",0)==0){simulate_gaussian_recipe(wire,destination);return;}
  std::istringstream config(wire);config.imbue(std::locale::classic());std::string magic;std::getline(config,magic);if(!magic.empty()&&magic.back()=='\r')magic.pop_back();need(magic=="GSIM_SIMULATION 1","unsupported simulation wire version");
  std::map<std::string,std::string> c;std::string key,value;while(config>>key){need(bool(config>>std::quoted(value)),"malformed simulation setting");need(c.emplace(key,value).second,"duplicate simulation setting");}need(config.eof(),"malformed simulation settings");
- const std::set<std::string> allowed{"pedigree","variants","founders","effects","traits","seed","genotyped","phenotyped","records_per_individual","visits","missing_rate","residual_covariance","maximum_memory_bytes"};for(const auto&kv:c)need(allowed.count(kv.first),"unknown simulation setting: "+kv.first);
+ const std::set<std::string> allowed{"pedigree","variants","founders","effects","traits","seed","genotyped","phenotyped","records_per_individual","visits","missing_rate","residual_covariance","maximum_memory_bytes","export_truth_phases"};for(const auto&kv:c)need(allowed.count(kv.first),"unknown simulation setting: "+kv.first);
  for(auto k:{"pedigree","variants","founders","effects","traits"})need(c.count(k),std::string("missing simulation setting: ")+k);
  auto get=[&](const char*k,const char*d){return c.count(k)?c.at(k):std::string(d);};
  auto traits=words(c.at("traits"));U q=traits.size();need(q>0&&q<=64,"workflow supports 1..64 traits");std::set<std::string> distinct;for(auto&t:traits)need(distinct.insert(id(t)).second,"duplicate trait");
@@ -57,6 +57,14 @@ void simulate_recipe(const std::string& wire,const std::string& destination){
  V centers(m,0),genetic(n*q,0);U founder_count=supplied.size();for(U j=0;j<m;++j){for(U i:supplied)centers[j]+=h1.allele(i,j)+h2.allele(i,j);centers[j]/=founder_count;for(U i=0;i<n;++i)for(U t=0;t<q;++t)genetic[i+t*n]+=(h1.allele(i,j)+h2.allele(i,j)-centers[j])*effects[j+t*m];}
  auto selected=sample(pop,ng,seed+1),observed=sample(pop,np,seed+2);std::sort(selected.begin(),selected.end());
  fs::path out=fs::absolute(destination).lexically_normal(),stage=out.string()+".staging";need(!fs::exists(out)&&!fs::exists(stage),"preserve existing simulation output/staging directory");need(fs::is_directory(out.parent_path()),"simulation output parent must exist");fs::create_directory(stage);
+ if(c.count("export_truth_phases")) {
+  need(c.at("export_truth_phases")=="0" || c.at("export_truth_phases")=="1","invalid export_truth_phases");
+  if(c.at("export_truth_phases")=="1") {
+   auto f=output(stage/"truth_phase_pairs.u8");
+   for(U j=0;j<m;++j)for(U i=0;i<n;++i)f.put(char(h1.allele(i,j)+2*h2.allele(i,j)));
+   f.close();need(bool(f),"truth phase export failed");
+  }
+ }
  // Existing packed BED writer; never materialize the dense genotype matrix.
  PhasedBedSink sink((stage/"genotypes.bed").string(),ng,false,128);
  for(U first=0;first<m;first+=128){U width=std::min<U>(128,m-first);PhasedHaplotypeMatrix a(ng,width),b(ng,width);for(U j=0;j<width;++j)for(U k=0;k<ng;++k){a.set_allele(k,j,h1.allele(selected[k],first+j));b.set_allele(k,j,h2.allele(selected[k],first+j));}sink.append(a,b);}sink.finalize();(void)variants.write_bim((stage/"genotypes.bim").string(),false);

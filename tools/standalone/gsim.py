@@ -16,7 +16,7 @@ def wire(path):
  path=Path(path).resolve(strict=True);text=path.read_text(encoding='utf-8-sig')
  if any(isinstance(t,(yaml.tokens.AnchorToken,yaml.tokens.AliasToken,yaml.tokens.TagToken)) for t in yaml.scan(text)):raise ValueError('YAML anchors, aliases and tags are unsupported')
  doc=yaml.load(text,Loader=Loader)
- keys={'schema','inputs','traits','seed','genotyped','phenotyped','records_per_individual','visits','missing_rate','residual_covariance','maximum_memory_bytes'}
+ keys={'schema','inputs','traits','seed','genotyped','phenotyped','records_per_individual','visits','missing_rate','residual_covariance','maximum_memory_bytes','export_truth_phases'}
  if isinstance(doc,dict) and doc.get('schema')=='gsim.gaussian_model/v1':
   if set(doc)-{'schema','inputs','seed','maximum_memory_bytes'} or not isinstance(doc.get('inputs'),dict) or set(doc['inputs'])!={'specification'}:raise ValueError('prepared Gaussian recipe requires inputs.specification and optional seed/memory controls')
   value=doc['inputs']['specification']
@@ -42,6 +42,9 @@ def wire(path):
   p=(path.parent/v).resolve(strict=True)
   if not p.is_file():raise ValueError('input must be a regular file')
   c[k]=p.as_posix()
+ if 'export_truth_phases' in doc:
+  if not isinstance(doc['export_truth_phases'],bool):raise ValueError('export_truth_phases must be boolean')
+  c['export_truth_phases']='1' if doc['export_truth_phases'] else '0'
  c['traits']=' '.join(traits)
  for k in ('seed','genotyped','phenotyped','records_per_individual','visits','maximum_memory_bytes'):
   if k in doc:
