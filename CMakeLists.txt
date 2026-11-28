@@ -7,7 +7,9 @@ target_include_directories(gsim_workflow PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 add_executable(gsim_native tools/standalone/simulation_main.cpp)
 target_link_libraries(gsim_native PRIVATE gsim_workflow)
 install(TARGETS gsim_native RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(PROGRAMS tools/standalone/gsim DESTINATION ${CMAKE_INSTALL_BINDIR})
+# Linux reads the interpreter directly from the first line of this launcher.
+configure_file(tools/standalone/gsim "${CMAKE_CURRENT_BINARY_DIR}/gsim" @ONLY NEWLINE_STYLE UNIX)
+install(PROGRAMS "${CMAKE_CURRENT_BINARY_DIR}/gsim" DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES tools/standalone/gsim.py DESTINATION ${CMAKE_INSTALL_DATADIR}/gsim)
 
 option(GSIM_BUILD_BENCHMARK_FIXTURE "Build synthetic LD founder fixture" OFF)
