@@ -17,3 +17,4 @@ src/*.exe
 
 website/_site/
 website/_quarto-preview/
+/tools/standalone/__pycache__/
